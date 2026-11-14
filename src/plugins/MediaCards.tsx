@@ -1,3 +1,4 @@
+import { IPlayF } from "../icons";
 import { useEffect, useState } from "react";
 import type { ImageRef, MediaItem } from "./protocol";
 import { pluginCommand, releaseMedia } from "./client";
@@ -26,3 +27,23 @@ export default function MediaCards({ pluginId, items, open, landscape=false }: {
     return <button className="hpp-media-card" key={`${item.id}-${index}`} onClick={()=>open(item)}><div className="hpp-poster">{cover?<img src={cover} alt="" loading="lazy"/>:<span>{item.title.slice(0,2)}</span>}{item.badge&&<small>{item.badge}</small>}</div><strong>{item.title}</strong><p>{[item.year,item.type,item.episodeCount?`${item.episodeCount} 集`:null].filter(Boolean).join(" · ")}</p></button>;
   })}</div>;
 }
+
+export function RowCard({ v, onOpen, cover }: { v: MediaItem; onOpen: () => void; cover?: string }) {
+  return (
+    <button onClick={onOpen} className="legacy-row-card w-[104px] shrink-0 text-left snap-start pressable group">
+      <div className="relative w-full rounded-(--r-sm) overflow-hidden bg-s1 elev-1" style={{ paddingTop: "133%" }}>
+        {cover ? <img src={cover} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover"/> : <span className="absolute inset-0 grid place-items-center text-mut">{v.title.slice(0,2)}</span>}
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/75 to-transparent" />
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[8.5px] font-bold brand-grad">
+          {v.badge || (v.status === "finished" ? "完结" : v.episodeCount ? `${v.episodeCount}集` : v.type || "")}
+        </span>
+        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 text-[9px] font-semibold text-white/90 tsh"><IPlayF size={9} />{v.stats?.plays ?? ""}</span>
+      </div>
+      <div className="mt-1.5 text-[11.5px] font-medium text-on clamp-1 leading-tight">{v.title}</div>
+      <div className="text-[10px] text-mut clamp-1 mt-0.5">{v.tags?.slice(0, 2).join(" · ")}</div>
+    </button>
+  );
+}
+
+
+export function MediaRow({pluginId,items,open}:{pluginId:string;items:MediaItem[];open:(item:MediaItem)=>void}) {const urls=useAssetUrls(pluginId,items.flatMap(i=>i.cover?[i.cover]:[]));let index=0;return <>{items.map(item=><RowCard key={item.id} v={item} cover={item.cover?urls[index++]:undefined} onOpen={()=>open(item)}/>)}</>;}

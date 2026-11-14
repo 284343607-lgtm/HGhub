@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useStore, type Tab } from "../store";
 import { APP_VERSION } from "../environment";
 import {
-  IClose, IGrid, IGridF, IHome, IHomeF, IMinus, IMoon, IRestore, ISearch, ISettings, ISidebar,
+  IClose, IGrid, IGridF, IHome, IHomeF, IMinus, IMoon, IRestore, ISearch, ISettings, ISidebar, ICpu,
   ISquare, ISun, IUser, IUserF, Logo,
 } from "../icons";
 
@@ -67,7 +67,6 @@ export function DesktopRail({ collapsed }: { collapsed: boolean }) {
   const items: { key: Tab; label: string; Icon: typeof IHome; Filled: typeof IHomeF }[] = [
     { key: "home", label: "首页", Icon: IHome, Filled: IHomeF },
     { key: "category", label: "分类", Icon: IGrid, Filled: IGridF },
-    { key: "profile", label: "我的", Icon: IUser, Filled: IUserF },
   ];
   return (
     <nav className={`win-sidebar ${collapsed ? "is-compact" : ""}`} aria-label="主导航">
@@ -90,7 +89,7 @@ export function DesktopRail({ collapsed }: { collapsed: boolean }) {
           <button className={`win-nav-item ${railPage === "plugins" ? "is-selected" : ""}`}
             aria-current={railPage === "plugins" ? "page" : undefined}
             onClick={() => { if (railPage !== "plugins") push({ kind: "plugins" }); }}>
-            <span className="win-nav-symbol"><IGrid size={21} strokeWidth={1.7} /></span>
+            <span className="win-nav-symbol"><ICpu size={21} strokeWidth={1.7} /></span>
             <span className="win-nav-copy">插件中心</span>
           </button>
           <button className={`win-nav-item ${railPage === "settings" ? "is-selected" : ""}`}
@@ -101,7 +100,7 @@ export function DesktopRail({ collapsed }: { collapsed: boolean }) {
           </button>
         </div>
         <div className="win-sidebar-bottom">
-          <button className="win-account" onClick={() => setTab("profile")}>
+          <button aria-label="我的" className={`win-account ${onTab("profile") ? "is-selected" : ""}`} aria-current={onTab("profile") ? "page" : undefined} onClick={() => setTab("profile")}>
             <IUser size={25}/>
             <span className="win-account-copy">
               <strong>我的片库</strong>

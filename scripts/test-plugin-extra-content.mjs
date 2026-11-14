@@ -1,3 +1,4 @@
+import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -12,6 +13,7 @@ export async function testPluginExtraContent({ page, dispatch, root, base, outpu
     assert(response.ok); return JSON.parse(response.value.message);
   };
   await page.reload();
+  await selectCategorySource(page,"虚构直播图文");
   await page.getByRole("button", { name: "直播 · 虚构直播图文", exact: true }).click();
   await page.getByRole("button", { name: "更多频道", exact: true }).click();
   await page.getByRole("button", { name: /虚构频道二/ }).waitFor();
@@ -26,6 +28,7 @@ export async function testPluginExtraContent({ page, dispatch, root, base, outpu
   assert.equal(beforeProgramme["last.live.resolve"].episodeId, undefined);
   await page.getByRole("button", { name: "节目单", exact: true }).click();
   await page.getByText("虚构节目单", { exact: true }).waitFor();
+  await page.locator(".hpp-content-settings summary").click();
   await page.getByLabel("源播放线路", { exact: true }).selectOption("signal:backup");
   await page.waitForFunction(() => document.querySelector('[aria-label="源播放线路"]')?.value === "signal:backup" && !document.querySelector('[aria-label="源播放线路"]').disabled);
   await page.getByLabel("源播放流", { exact: true }).selectOption("1");
@@ -39,6 +42,7 @@ export async function testPluginExtraContent({ page, dispatch, root, base, outpu
   await page.screenshot({ path: join(output, "live-channel.png") });
   await page.getByRole("button", { name: "返回", exact: true }).click();
   assert.equal(await page.locator("video").count(), 0);
+  await selectCategorySource(page,"虚构直播图文");
   await page.getByRole("button", { name: "图文 · 虚构直播图文", exact: true }).click();
   await page.getByRole("button", { name: "更多图文", exact: true }).click();
   await page.getByRole("button", { name: /虚构纯文本/ }).waitFor();

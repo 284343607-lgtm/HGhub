@@ -4,6 +4,8 @@ import { pluginCommand, pluginError, releaseMedia, type InstalledPlugin, type Pr
 import { initialPlaybackSelection, rememberPlaybackSelection, type PlaybackSelection } from "./playbackSelection";
 import { usePluginRequests } from "./usePluginRequests";
 import PluginPlayer from "./PluginPlayer";
+import type { FeedPresentation } from "../components/Feed";
+import { useAssetUrls } from "./MediaCards";
 import type { Episode, MediaDetail, Page } from "./protocol";
 import { Notice } from "./BrowsePages";
 import CommentsPanel from "./CommentsPanel";
@@ -19,8 +21,8 @@ export function alignedEpisode(previous: Episode, episodes: Episode[]) {
   const matches = episodes.filter(e => e.episodeNumber === previous.episodeNumber && e.season === previous.season);
   return matches.length === 1 ? matches[0] : undefined;
 }
-export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, active = true, start, onSwitch }: {
-  plugin: InstalledPlugin; mediaId: string; onBack: () => void; manage: () => void; active?: boolean;
+export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, active = true, start, onSwitch, presentation = {}, entryEpisodeId }: {
+  plugin: InstalledPlugin; mediaId: string; onBack?: () => void; manage: () => void; active?: boolean; presentation?: FeedPresentation; entryEpisodeId?: string;
   start?: SourceStart; onSwitch: (pluginId: string, mediaId: string, start?: SourceStart) => void;
 }) {
   const host = useHost(), request = usePluginRequests();
@@ -119,6 +121,34 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     })().catch(e => { if (live) setError(pluginError(e)); });
     return () => { live = false; };
   }, [start, !!detail, active, canPlay]);
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!detail || start || !active || !canPlay || autoStarted.current) return;
+    autoStarted.current = true;
+    let live = true;
+    void (async () => {
+      const resume = entry?.lastProgress;
+      let list = detail.playlists.find(p => p.id === resume?.playlistId) || detail.playlists[0];
+      if (!list) { setError("暂无可播放分集"); return; }
+      const wanted = entryEpisodeId || resume?.episodeId;
+      const cursors = new Set<string>();
+      while ((!list.episodes.length || (wanted && !list.episodes.some(e => e.id === wanted))) && list.next && !cursors.has(list.next) && plugin.methods.includes("media.listEpisodes")) {
+        cursors.add(list.next);
+        const page = await request<Page<Episode>>("call", {id:plugin.meta.id,method:"media.listEpisodes",args:{mediaId,playlistId:list.id,cursor:list.next,limit:100}});
+        if (!live) return;
+        const known = new Set(list.episodes.map(e=>e.id));
+        list={...list,next:page.next,episodes:[...list.episodes,...page.items.filter(e=>!known.has(e.id))]};
+      }
+      if (!live) return;
+      const loaded = list;
+      setDetail(old=>old && ({...old,playlists:old.playlists.map(p=>p.id===loaded.id?loaded:p)}));
+      const first=list.episodes.find(e=>e.id===wanted) || list.episodes[0];
+      setPlaylist(list.id);
+      if (!first || first.locked) { setError(first?.lockReason || "请选择可播放的分集"); return; }
+      void play(first,"play",list.id);
+    })().catch(e=>{if(live)setError(pluginError(e));});
+    return()=>{live=false;};
+  }, [!!detail, start, active, canPlay]);
   const selectPlayback = (update: Partial<PlaybackSelection>) => {
     const c = current.current; if (c) void play(c.ep, "switch", c.playlistId, { ...selection.current, ...update });
   };
@@ -153,30 +183,35 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     else { setEpisode(null); if (old) setError("无法唯一对齐季集编号，请重新选集。"); }
   };
   const resume = entry?.lastProgress;
-  return <div className="hpp-page"><header className="hpp-header"><button onClick={onBack}>返回</button><h1>{detail?.title || "作品详情"}</h1><button onClick={manage}>插件</button></header><div className="hpp-scroll"><div className="hpp-content"><Notice error={error}/>
-    {detail ? <div className="hpp-detail-layout"><main><div className="hpp-player-box">{media && active && canPlay ? <PluginPlayer media={media} position={position.current} onPosition={(t, duration) => {
-      position.current = t; progress.update(t, duration); if (Date.now() - lastSave.current > 5000) { lastSave.current = Date.now(); void save().catch(e => setError(pluginError(e))); }
-    }} onPlaying={progress.playing} onStopped={() => { progress.pause(); void save().catch(e => setError(pluginError(e))); }} onEnded={() => { progress.end(); void save().catch(e => setError(pluginError(e))); }} onFailure={failed}/> : <div className="hpp-player-empty">{busy ? "正在解析播放地址…" : "选择分集开始播放"}</div>}</div>
-      {choices && <div className="hpp-playback-options" aria-label="播放选择">
-        <PlaybackOptions stage="源" choices={choices.source} disabled={busy} onServer={serverId => selectPlayback({ serverId: serverId || undefined, streamIndex: 0, resolverStreamIndex: 0 })} onStream={streamIndex => selectPlayback({ streamIndex, resolverStreamIndex: 0 })}/>
-        {choices.resolver && <PlaybackOptions stage="解析器" choices={choices.resolver} disabled={busy} onServer={serverId => selectPlayback({ resolverServers: { ...selection.current.resolverServers, [choices.resolver!.pluginId]: serverId }, resolverStreamIndex: 0 })} onStream={resolverStreamIndex => selectPlayback({ resolverStreamIndex })}/>}
-      </div>}
-      <div className="hpp-detail-title"><h2>{detail.title}</h2>{episode && <span>{episode.label || episode.title || `第 ${episode.index} 集`}</span>}</div>
-      <p className="hpp-muted">{plugin.meta.name}</p><p className="hpp-description">{detail.description || "暂无简介"}</p>
-      <button disabled={busy || !active} onClick={() => setSwitching(true)}>换源</button>
-      <div className="hpp-source-tabs"><button onClick={() => void host.put(plugin.meta.id, detail, { favorite: !entry?.favorite }).catch(e => setError(pluginError(e)))}>{entry?.favorite ? "取消本地收藏" : "本地收藏"}</button><button onClick={() => void host.put(plugin.meta.id, detail, { tracking: !entry?.tracking }).catch(e => setError(pluginError(e)))}>{entry?.tracking ? "取消追更" : "追更"}</button>
-      {current.current && <><button disabled={busy} onClick={() => { refreshed.current = false; attempted.current.clear(); const c = current.current!; void play(c.ep, "refresh", c.playlistId); }}>刷新播放</button>
-      <button disabled={busy} onClick={() => selectPlayback({ serverId: undefined, resolverId: undefined, streamIndex: 0, resolverStreamIndex: 0, resolverServers: {} })}>使用默认播放选择</button></>}</div>
-      {active && <><MediaInteractions plugin={plugin} detail={detail}/><CommentsPanel plugin={plugin} mediaId={mediaId} episodeId={current.current?.ep.id}/></>}
-      {resume && <button disabled={busy} onClick={() => { const list = detail.playlists.find(p => p.id === resume.playlistId), ep = list?.episodes.find(e => e.id === resume.episodeId); if (list && ep) { setPlaylist(list.id); void play(ep, "play", list.id); } else setError("上次分集暂未加载，请加载对应播放列表后选集。"); }}>继续观看 · {Math.floor(resume.positionSec)} 秒</button>}
-      {choices?.resolverRoute && <ResolverChooser key={choices.resolverRoute.host} route={choices.resolverRoute} busy={busy || !active} select={(resolverId, resolverHost) => {
-        const c = current.current;
-        return c ? play(c.ep, "switch", c.playlistId, { ...selection.current, resolverId, resolverHost, resolverStreamIndex: 0 }) : Promise.resolve(undefined);
-      }}/>}
-    </main><aside><h3>选集</h3><div className="hpp-playlists">{detail.playlists.map(p => <button key={p.id} className={p.id === playlist ? "selected" : ""} disabled={busy} onClick={() => chooseList(p.id)}>{p.label || p.id}</button>)}</div>
-      {[...new Set(currentList?.episodes.map(e => e.season) || [])].map(season => <section key={season ?? "none"}>{season !== undefined && <h3>{detail.seasons?.find(s => s.number === season)?.label || `第 ${season} 季`}</h3>}<div className="hpp-episodes">{currentList?.episodes.filter(e => e.season === season).map(ep => <button title={ep.lockReason || ep.title} key={ep.id} className={episode?.id === ep.id ? "selected" : ""} disabled={busy || ep.locked || !canPlay} onClick={() => void play(ep)}>{ep.label || `第 ${ep.index} 集`}</button>)}</div></section>)}
-      {currentList?.next && plugin.methods.includes("media.listEpisodes") && <button disabled={busy} onClick={() => void more()}>更多分集</button>}</aside></div> : <p>{error ? "详情加载失败" : "正在读取详情…"}</p>}
-  </div></div>{switching && detail && active && <SourceSwitcher plugin={plugin} detail={detail} previousEpisode={current.current?.ep} getPosition={() => position.current} beforeSwitch={save} onConfirm={onSwitch} onClose={() => setSwitching(false)}/>}</div>;
+  const poster = useAssetUrls(plugin.meta.id, detail?.cover ? [detail.cover] : [])[0];
+  const nextEpisode = currentList?.episodes[(currentList?.episodes.findIndex(e=>e.id===episode?.id) ?? -1)+1];
+  const refresh = () => { const c=current.current; if(c){refreshed.current=false;attempted.current.clear();void play(c.ep,"refresh",c.playlistId);} };
+  const episodesPanel = <><div className="hpp-playlists">{detail?.playlists.map(p=><button key={p.id} aria-pressed={p.id===playlist} className={p.id===playlist?"selected":""} disabled={busy} onClick={()=>chooseList(p.id)}>{p.label||p.id}</button>)}</div>
+    {[...new Set(currentList?.episodes.map(e=>e.season)||[])].map(season=><section key={season??"none"}>{season!==undefined&&<h3>{detail?.seasons?.find(s=>s.number===season)?.label||`第 ${season} 季`}</h3>}<div className="hpp-episodes">{currentList?.episodes.filter(e=>e.season===season).map(ep=><button key={ep.id} title={ep.lockReason||ep.title} className={episode?.id===ep.id?"selected":""} aria-pressed={episode?.id===ep.id} disabled={busy||ep.locked||!canPlay} onClick={()=>void play(ep)}>{ep.label||`第 ${ep.index} 集`}</button>)}</div></section>)}
+    {currentList?.next && plugin.methods.includes("media.listEpisodes") && <button disabled={busy} onClick={()=>void more()}>更多分集</button>}</>;
+  const playbackPanel=<><Notice error={error}/><div className="hpp-playback-options" aria-label="播放选择">{choices && <>
+    <PlaybackOptions stage="源" choices={choices.source} disabled={busy} onServer={serverId=>selectPlayback({serverId:serverId||undefined,streamIndex:0,resolverStreamIndex:0})} onStream={streamIndex=>selectPlayback({streamIndex,resolverStreamIndex:0})}/>
+    {choices.resolver && <PlaybackOptions stage="解析器" choices={choices.resolver} disabled={busy} onServer={serverId=>selectPlayback({resolverServers:{...selection.current.resolverServers,[choices.resolver!.pluginId]:serverId},resolverStreamIndex:0})} onStream={resolverStreamIndex=>selectPlayback({resolverStreamIndex})}/>}</>}
+    <button disabled={busy||!active} onClick={refresh}>刷新播放</button><button disabled={busy||!active} onClick={()=>selectPlayback({serverId:undefined,resolverId:undefined,streamIndex:0,resolverStreamIndex:0,resolverServers:{}})}>使用默认播放选择</button>
+    <button disabled={busy||!detail} onClick={()=>setSwitching(true)}>换源</button>
+    {choices?.resolverRoute && <ResolverChooser key={choices.resolverRoute.host} route={choices.resolverRoute} busy={busy||!active} select={(resolverId,resolverHost)=>{const c=current.current;return c?play(c.ep,"switch",c.playlistId,{...selection.current,resolverId,resolverHost,resolverStreamIndex:0}):Promise.resolve(undefined);}}/>}</div></>;
+  const detailPanel=detail?<><div className="legacy-detail-summary">{poster&&<img src={poster} alt=""/>}<div><h2>{detail.title}</h2><p>{plugin.meta.name}</p>{detail.score!==undefined&&<strong>{detail.score.toFixed(1)} 分</strong>}<p>{detail.episodeCount||currentList?.episodes.length||0} 集</p></div></div><h3>简介</h3><p className="hpp-description">{detail.description||"暂无简介"}</p>
+    <button onClick={()=>void host.put(plugin.meta.id,detail,{tracking:!entry?.tracking}).catch(e=>setError(pluginError(e)))}>{entry?.tracking?"取消追更":"追更"}</button>
+    {resume&&<button disabled={busy} onClick={()=>{const list=detail.playlists.find(p=>p.id===resume.playlistId),ep=list?.episodes.find(e=>e.id===resume.episodeId);if(list&&ep){setPlaylist(list.id);void play(ep,"play",list.id);}else setError("上次分集暂未加载，请加载对应播放列表后选集。");}}>继续观看 · {Math.floor(resume.positionSec)} 秒</button>}
+    {active&&<MediaInteractions plugin={plugin} detail={detail}/>}<button onClick={manage}>管理此插件</button></>:<p>{error||"正在读取作品…"}</p>;
+  return <div className="legacy-media-page">
+    <PluginPlayer {...presentation} media={active&&canPlay?media:null} active={active} position={position.current} error={error} onRetry={refresh}
+      title={detail?.title||presentation.title} author={detail?.author?.name||plugin.meta.name} description={detail?.description} score={detail?.score} poster={poster}
+      episodeLabel={episode?.label||String(episode?.episodeNumber??episode?.index??1)} episodeCount={detail?.episodeCount||currentList?.episodes.length}
+      social={detail&&active?<MediaInteractions compact plugin={plugin} detail={detail}/>:undefined}
+      onBack={onBack} favorite={!!entry?.favorite} onFavorite={detail?()=>void host.put(plugin.meta.id,detail,{favorite:!entry?.favorite}).catch(e=>setError(pluginError(e))):undefined}
+      onNextEpisode={nextEpisode&&!nextEpisode.locked?()=>void play(nextEpisode):undefined}
+      panels={{detail:detailPanel,episodes:episodesPanel,playback:playbackPanel,comments:plugin.methods.includes("comments.list")?<CommentsPanel embedded plugin={plugin} mediaId={mediaId} episodeId={current.current?.ep.id}/>:undefined}}
+      onPosition={(t,duration)=>{position.current=t;progress.update(t,duration);if(Date.now()-lastSave.current>5000){lastSave.current=Date.now();void save().catch(e=>setError(pluginError(e)));}}}
+      onPlaying={progress.playing} onStopped={()=>{progress.pause();void save().catch(e=>setError(pluginError(e)));}}
+      onEnded={()=>{progress.end();void save().catch(()=>{});if(host.prefs.autoNext){if(nextEpisode&&!nextEpisode.locked)void play(nextEpisode);else presentation.onNext?.();}}} onFailure={failed}/>
+    {switching&&detail&&active&&<SourceSwitcher plugin={plugin} detail={detail} previousEpisode={current.current?.ep} getPosition={()=>position.current} beforeSwitch={save} onConfirm={onSwitch} onClose={()=>setSwitching(false)}/>}
+  </div>;
 }
 
 function PlaybackOptions({ stage, choices, disabled, onServer, onStream }: {

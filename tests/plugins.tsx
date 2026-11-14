@@ -1,8 +1,9 @@
+import "../src/index.css";
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
 import App from "../src/App";
 import { AppProvider } from "../src/store";
-import "../src/index.css";
+
 
 // Replace only Tauri's IPC transport. Rust dispatcher, QuickJS, plugin network,
 // validation, media sessions and the React page remain the production code.
@@ -16,6 +17,7 @@ Object.assign(window, { __HPP_TEST_OPENED_URLS__: openedUrls, __TAURI_INTERNALS_
     if (cmd.endsWith("is_maximized") || cmd.endsWith("is_fullscreen")) return false;
     return;
   }
+  if (cmd === "plugin:app|registerListener" || cmd === "plugin:app|remove_listener") return;
   if (cmd === "plugin:event|listen") return 1;
   if (cmd === "plugin:event|unlisten") return;
   if (cmd !== "hpp_manage") throw new Error(`Unexpected command ${cmd}`);

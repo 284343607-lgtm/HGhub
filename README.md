@@ -76,6 +76,8 @@ pnpm build           # 类型检查与前端构建
 
 各平台配置位于 `src-tauri/tauri*.conf.json`。移动端及 macOS 开发需要相应平台的 SDK 和工具链。
 
+Android 构建另需 JDK 17、Android SDK / NDK 和 libclang。设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME`，并让 `LIBCLANG_PATH` 指向 libclang 动态库所在目录；插件引擎会使用 NDK 头文件生成 Android 绑定。首次运行 `pnpm tauri android init --ci`，随后可用 `pnpm tauri android build --debug --target x86_64 --apk --ci` 构建模拟器安装包（ARM64 设备将目标改为 `aarch64`）。
+
 - exFAT 等不支持符号链接的文件系统需保留 `.npmrc` 中的 `node-linker=hoisted`；部分原生构建步骤仍可能受文件系统限制。
 - 依赖安装脚本的允许列表见 `package.json` 与 `pnpm-workspace.yaml`。
 - 验证命令及当前支持范围见[实现进度](docs/plugin-protocol/IMPLEMENTATION.md)。

@@ -1,3 +1,4 @@
+import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ export async function testPluginFeed({ page, dispatch, root, base, output, repor
   await page.evaluate(() => { const prefs = JSON.parse(localStorage.getItem("hpp.preferences") || "{}"); localStorage.setItem("hpp.preferences", JSON.stringify({ ...prefs, autoNext: false })); });
   await page.reload();
   await rail.getByRole("button", { name: "首页", exact: true }).click();
+  await selectCategorySource(page,"虚构信息流");
   await page.getByRole("button", { name: "信息流 · 虚构信息流", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   const entry = page.getByRole("article", { name: "当前信息流内容" });
@@ -55,6 +57,7 @@ export async function testPluginFeed({ page, dispatch, root, base, output, repor
   await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
   assert((await progress("feed:direct", "entry:real")).positionSec >= 2);
   assert((await progress("feed:detail", "episode:real", "playlist:real")).positionSec > 0);
+  await page.locator(".hpp-content-settings summary").click();
   await page.getByRole("button", { name: "重试播放", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
   const reports = (await inspect()).reports.filter(r => r.mediaId === "feed:direct");
@@ -68,6 +71,7 @@ export async function testPluginFeed({ page, dispatch, root, base, output, repor
   assert.equal(await page.locator("video").count(), 0);
   await page.evaluate(() => { const prefs = JSON.parse(localStorage.getItem("hpp.preferences")); localStorage.setItem("hpp.preferences", JSON.stringify({ ...prefs, autoNext: true })); });
   await page.reload();
+  await selectCategorySource(page,"虚构信息流");
   await page.getByRole("button", { name: "信息流 · 虚构信息流", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.evaluate(() => document.querySelector("video").dispatchEvent(new Event("ended")));

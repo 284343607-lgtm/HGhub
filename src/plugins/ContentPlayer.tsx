@@ -42,11 +42,11 @@ export default function ContentPlayer({ plugin, action, contentId, active = true
   }, [active, contentId, episodeId, playlistId, plugin.revision]);
   const change = (update: Partial<PlaybackSelection>) => { refreshed.current = false; void prepare("play", { ...selection.current, ...update }); };
   return <section aria-label={action === "live.prepare" ? "直播播放器" : action === "article.prepare" ? "图文视频播放器" : "信息流播放器"}>
-    <Notice error={error}/><div className="hpp-player-box">{media && active ? <PluginPlayer media={media} position={action === "live.prepare" ? 0 : position.current} onPosition={(t, duration) => { position.current = t; onPosition?.(t, duration); }} onPlaying={onPlaying} onStopped={onStopped} onEnded={onEnded} onFailure={() => {
+    <Notice error={error}/><div className="hpp-player-box legacy-inline-player">{media && active ? <PluginPlayer media={media} position={action === "live.prepare" ? 0 : position.current} onPosition={(t, duration) => { position.current = t; onPosition?.(t, duration); }} onPlaying={onPlaying} onStopped={onStopped} onEnded={onEnded} onFailure={() => {
       if (!refreshed.current) { refreshed.current = true; void prepare("refresh"); }
       else setError("播放失败，请切换播放流或手动重试。");
     }}/> : <div className="hpp-player-empty">{busy ? "正在解析播放地址…" : "等待播放"}</div>}</div>
-    <div className="hpp-playback-options">{choices && <><ContentPlaybackOptions label="源" choices={choices.source} disabled={busy} server={serverId => change({ serverId: serverId || undefined, streamIndex: 0, resolverStreamIndex: 0 })} stream={streamIndex => change({ streamIndex, resolverStreamIndex: 0 })}/>
+    <details className="hpp-content-settings" open={error ? true : undefined}><summary>播放设置</summary><div className="hpp-playback-options">{choices && <><ContentPlaybackOptions label="源" choices={choices.source} disabled={busy} server={serverId => change({ serverId: serverId || undefined, streamIndex: 0, resolverStreamIndex: 0 })} stream={streamIndex => change({ streamIndex, resolverStreamIndex: 0 })}/>
       {choices.resolver && <ContentPlaybackOptions label="解析器" choices={choices.resolver} disabled={busy} server={serverId => change({ resolverServers: { ...selection.current.resolverServers, [choices.resolver!.pluginId]: serverId }, resolverStreamIndex: 0 })} stream={resolverStreamIndex => change({ resolverStreamIndex })}/>}</>}
       <button disabled={busy || !active} onClick={() => { refreshed.current = false; void prepare("refresh"); }}>重试播放</button>
     </div>
@@ -54,6 +54,7 @@ export default function ContentPlayer({ plugin, action, contentId, active = true
       refreshed.current = false;
       return prepare("play", { ...selection.current, resolverId, resolverHost, resolverStreamIndex: 0 });
     }}/>}
+    </details>
   </section>;
 }
 function ContentPlaybackOptions({ label, choices, disabled, server, stream }: {

@@ -186,6 +186,44 @@ fn main() {
 
     let mut bindgen_cflags = vec![];
 
+    if target_os == "android" {
+        println!("cargo:rerun-if-env-changed=NDK_HOME");
+        println!("cargo:rerun-if-env-changed=ANDROID_NDK_HOME");
+        let ndk = env::var_os("NDK_HOME")
+            .or_else(|| env::var_os("ANDROID_NDK_HOME"))
+            .expect("Android bindings require NDK_HOME or ANDROID_NDK_HOME");
+        let host_tag = match env::consts::OS {
+            "windows" => "windows-x86_64",
+            "macos" => "darwin-x86_64",
+            "linux" => "linux-x86_64",
+            other => panic!("Unsupported Android build host: {other}"),
+        };
+        let toolchain = PathBuf::from(ndk)
+            .join("toolchains/llvm/prebuilt")
+            .join(host_tag);
+        let sysroot = toolchain.join("sysroot");
+        bindgen_cflags.push(format!("--sysroot={}", sysroot.display()));
+        // libclang may be installed separately from the NDK compiler. Use the
+        // NDK's builtin headers too, so stdbool.h / stddef.h resolve correctly.
+        let clang = toolchain
+            .join("bin")
+            .join(if cfg!(windows) { "clang.exe" } else { "clang" });
+        let resource_dir = process::Command::new(clang)
+            .arg("-print-resource-dir")
+            .output()
+            .expect("Unable to query NDK clang resource directory");
+        assert!(
+            resource_dir.status.success(),
+            "NDK clang resource query failed"
+        );
+        bindgen_cflags.push(format!(
+            "-resource-dir={}",
+            String::from_utf8(resource_dir.stdout)
+                .expect("NDK clang resource path must be UTF-8")
+                .trim()
+        ));
+    }
+
     if target_os == "windows" {
         if target_env == "msvc" {
             env::set_var(

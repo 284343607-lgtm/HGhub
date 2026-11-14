@@ -1,3 +1,4 @@
+import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
     await page.evaluate(seconds => { const v = document.querySelector("video"); v.currentTime = seconds; v.dispatchEvent(new Event("timeupdate")); v.pause(); }, seconds);
     await saved;
   };
-  await page.reload(); await rail.getByRole("button", { name: "首页", exact: true }).click();
+  await page.reload(); await openRecommendations(page,"原始虚构源");
   await page.getByLabel("原始虚构源的推荐").getByRole("button", { name: /跨源合成作品/ }).click();
   await page.getByRole("button", { name: "a:actual", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
@@ -83,6 +84,7 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
   // Return to original via the local library and select a paged candidate.
   await rail.getByRole("button", { name: "我的", exact: true }).click();
   const originalCard = page.locator(".hpp-local-entry").filter({ hasText: "原始虚构源" });
+  await originalCard.locator("summary").click();
   await originalCard.getByRole("button", { name: "关联来源", exact: true }).click();
   await originalCard.getByRole("button", { name: /候选虚构源/ }).first().waitFor();
   await originalCard.getByRole("button", { name: "查看作品", exact: true }).click();

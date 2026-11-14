@@ -4,7 +4,7 @@ import { platform } from "./environment";
 import type { SourceStart } from "./plugins/sourceMatching";
 export type Tab = "home" | "category" | "search" | "profile";
 export type Theme = "dark" | "light";
-export type PageInput = { kind: "plugins"; focusId?: string } | { kind: "settings" } | { kind: "media"; pluginId: string; mediaId: string; start?: SourceStart } | { kind: "section"; pluginId: string; sectionId: string; title?: string } | { kind: "live"; pluginId: string } | { kind: "articles"; pluginId: string } | { kind: "article"; pluginId: string; articleId: string } | { kind: "feed"; pluginId: string };
+export type PageInput = { kind: "plugins"; focusId?: string } | { kind: "settings" } | { kind: "media"; pluginId: string; mediaId: string; start?: SourceStart } | { kind: "section"; pluginId: string; sectionId: string; title?: string } | { kind: "live"; pluginId: string } | { kind: "articles"; pluginId: string } | { kind: "article"; pluginId: string; articleId: string } | { kind: "feed"; pluginId: string } | { kind: "recommendations"; pluginId: string };
 export type Page = PageInput & { key: string };
 function read<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } }
 function useApplication() {
@@ -13,6 +13,7 @@ function useApplication() {
   const [muteOnStartup, setMuteOnStartup] = useState(() => read<boolean>("hpp.startMuted", true) !== false);
   const [volume, setVolume] = useState(() => { const v = read("hpp.volume", 0.7); return typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.7; });
   const [muted, setMuted] = useState(muteOnStartup);
+  const [theater, setTheater] = useState(false), [fs, setFs] = useState(false), [clean, setClean] = useState(false);
   const [strictSecurity, setStrict] = useState(true), [strictSecurityReady, setSecurityReady] = useState(false), [securityPending, setPending] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -25,7 +26,7 @@ function useApplication() {
   const push = useCallback((p: PageInput) => setStack(old => [...old, { ...p, key: crypto.randomUUID() }]), []);
   const replace = useCallback((p: PageInput) => setStack(old => [...old.slice(0, -1), { ...p, key: crypto.randomUUID() }]), []);
   const pop = useCallback(() => setStack(old => old.slice(0, -1)), []);
-  return { platform, theme, setTheme, tab, setTab, stack, push, replace, pop, muteOnStartup, setMuteOnStartup, volume, setVolume, muted, setMuted, strictSecurity, strictSecurityReady, securityPending, setStrictSecurity, error };
+  return { platform, theme, setTheme, tab, setTab, stack, push, replace, pop, muteOnStartup, setMuteOnStartup, volume, setVolume, muted, setMuted, theater, setTheater, fs, setFs, clean, setClean, strictSecurity, strictSecurityReady, securityPending, setStrictSecurity, error };
 }
 const Context = createContext<ReturnType<typeof useApplication>>(null!);
 export const useStore = () => useContext(Context);

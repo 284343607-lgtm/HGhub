@@ -1,3 +1,4 @@
+import { openRecommendations, installedTab, importTab } from "./frontend-navigation.mjs";
 // Windows integration: real Rust/QuickJS + real React + Edge media decoding.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -15,6 +16,7 @@ import { testPluginFeed } from "./test-plugin-feed.mjs";
 import { testPluginSourceSwitch } from "./test-plugin-source-switch.mjs";
 import { testPluginBrowsing } from "./test-plugin-browsing.mjs";
 import { testResolverPreferences } from "./test-plugin-resolver-preferences.mjs";
+import { testFrontend } from "./test-frontend.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = join(root, "test-results", "plugins", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -85,11 +87,17 @@ try {
   const errors = []; page.on("pageerror", e => errors.push(e.message));
   await page.route("**/__hpp_test_ipc", async route => { const response = await dispatch(JSON.parse(route.request().postData())); await route.fulfill({ contentType: "application/json", body: JSON.stringify(response) }); });
   await page.route("**/*", route => { const url = route.request().url(); if (url.includes("/__hpp_test_ipc") || new URL(url).hostname === "127.0.0.1") return route.fallback(); report.external.push(url); return route.abort(); });
+  if (!process.argv.includes("--frontend")) await page.addInitScript(() => { if (!localStorage.getItem("hpp.preferences")) localStorage.setItem("hpp.preferences", JSON.stringify({ homeMode: "multiple", homeIds: [], autoNext: false })); });
   await page.goto(`${ui}tests/plugins.html`);
-  await page.getByRole("button", { name: "管理插件", exact: true }).click();
+  if (process.argv.includes("--frontend")) {
+    await testFrontend({ page, browser, dispatch, base, ui, root, output, report });
+  } else {
+  await page.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "插件中心", exact: true }).click();
+  await importTab(page);
   await page.locator("summary").filter({ hasText: "粘贴代码导入" }).click();
   const code = (await readFile(join(root, "tests/fixtures/plugin-local.js"), "utf8")).replaceAll("__FIXTURE_BASE__", base);
   await page.getByRole("textbox", { name: "插件代码" }).fill(code); await page.getByRole("button", { name: "导入代码", exact: true }).click();
+  await installedTab(page);
   await page.getByText("已就绪", { exact: true }).waitFor(); report.passed.push("Import evaluates the module, discovers capabilities, initializes endpoint and persists installation");
   await page.screenshot({ path: join(output, "management-dark.png") });
   await page.getByRole("button", { name: "设置与日志", exact: true }).click();
@@ -185,7 +193,7 @@ try {
   const rail = page.getByRole("navigation", { name: "主导航" });
   assert.equal(await rail.getByRole("button", { name: "排行榜", exact: true }).count(), 0);
   assert.equal(await rail.getByRole("button", { name: "登录 HGhub", exact: true }).count(), 0);
-  await rail.getByRole("button", { name: "首页", exact: true }).click();
+  await openRecommendations(page,"本地虚构影院");
   await page.getByRole("heading", { name: "虚构推荐本地虚构影院" }).waitFor();
   await page.getByRole("button", { name: "查看更多", exact: true }).click();
   await page.getByRole("heading", { name: "虚构推荐", exact: true }).waitFor();
@@ -204,7 +212,7 @@ try {
   await page.waitForFunction(() => document.querySelector("video")?.paused);
   await rail.getByRole("button", { name: "我的", exact: true }).click();
   await page.getByRole("heading", { name: "重命名虚构影院", exact: true }).waitFor();
-  await page.getByRole("button", { name: "观看历史", exact: true }).click();
+  await page.getByRole("button", { name: "历史", exact: true }).click();
   await page.getByRole("button", { name: "继续观看", exact: true }).click();
   await page.getByRole("button", { name: "普通视频", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
@@ -213,6 +221,7 @@ try {
   assert(Object.values(libraryData.entries).some(e => e.favorite && e.tracking));
   await rail.getByRole("button", { name: "分类", exact: true }).click();
   await page.getByRole("button", { name: /分类中的虚构短剧/ }).waitFor();
+  await page.getByRole("button", { name: "全部", exact: true }).first().click();
   await page.getByLabel("2026", { exact: true }).check();
   await page.getByRole("button", { name: /筛选后的虚构短剧/ }).waitFor();
   await page.getByLabel("分类排序", { exact: true }).selectOption("latest");
@@ -254,9 +263,11 @@ try {
   await rail.getByRole("button", { name: "插件中心", exact: true }).click();
   // Exercise production host-rendered forms, including every protocol field type.
   const formCode = (await readFile(join(root, "src-tauri/crates/hpp/tests/fixtures/forms.js"), "utf8")).replaceAll("__FIXTURE_BASE__", base);
+  await importTab(page);
   await page.locator("summary").filter({ hasText: "粘贴代码导入" }).click();
   await page.getByRole("textbox", { name: "插件代码" }).fill(formCode);
   await page.getByRole("button", { name: "导入代码", exact: true }).click();
+  await installedTab(page);
   const formPlugin = page.locator("article.hpp-plugin").filter({ has: page.getByRole("heading", { name: "虚构账号与表单" }) });
   await formPlugin.getByText("已就绪", { exact: true }).waitFor();
   await formPlugin.getByRole("button", { name: "设置与日志", exact: true }).click();
@@ -335,9 +346,11 @@ try {
       auth:{getMethods(){return {methods:[{id:"direct",label:"解析器虚构登录"}]};},submit(){return {status:"ok",user:{id:"resolver-user",name:"虚构解析器用户"}};},getProfile(){return null;},logout(){}}
     });`;
   await page.getByRole("button", { name: "插件中心", exact: true }).click();
+  await importTab(page);
   await page.locator("summary").filter({ hasText: "粘贴代码导入" }).click();
   await page.getByRole("textbox", { name: "插件代码" }).fill(resolverCode);
   await page.getByRole("button", { name: "导入代码", exact: true }).click();
+  await installedTab(page);
   const resolverPlugin = page.locator("article.hpp-plugin").filter({ has: page.getByRole("heading", { name: "虚构账号解析器" }) });
   await resolverPlugin.getByText("已就绪", { exact: true }).waitFor();
   const updatedSource = await dispatch({ action: "import", params: { code: formCode.replace('format: "progressive"', 'kind: "page"') } });
@@ -359,17 +372,19 @@ try {
   assert((await dispatch({action:"call",params:{id:"fixture.forms",method:"auth.submit",args:{methodId:"direct",values:{}},requestId:"cloud-login"}})).ok);
   await page.reload();
   await rail.getByRole("button", { name: "我的", exact: true }).click();
+  await page.getByRole("button", { name: "来自片源", exact: true }).click();
   const account=page.locator("section.hpp-account").filter({has:page.getByRole("heading",{name:"虚构账号与表单",exact:true})});
   await account.getByText("虚构观众",{exact:true}).waitFor();
   await account.getByRole("button",{name:"云端收藏",exact:true}).click();
   await account.getByRole("button",{name:/云端虚构收藏/}).waitFor();
   await account.getByRole("button",{name:"本页导入到本地片库",exact:true}).click();
   await account.getByRole("status").filter({hasText:"本页条目已导入本地收藏"}).waitFor();
+  await page.getByRole("button", { name: "收藏", exact: true }).click();
   await page.locator(".hpp-local-library").getByRole("heading",{name:"云端虚构收藏",exact:true}).waitFor();
   assert((await dispatch({action:"library.put",params:{pluginId:"fixture.forms",item:{id:"cloud-one",title:"云端虚构收藏"},tracking:true}})).ok);
   await page.reload();
   await rail.getByRole("button", { name: "我的", exact: true }).click();
-  await page.getByRole("button",{name:"追更",exact:true}).click();
+  await page.getByRole("button",{name:"只看追更",exact:true}).click();
   await page.getByRole("button",{name:"检查追更",exact:true}).click();
   await page.getByText(/更新至第七集/).waitFor();
   const afterUpdates=await dispatch({action:"library.list",params:{}});
@@ -396,14 +411,17 @@ try {
   await writeFile(join(importDir, "manifest.json"), JSON.stringify({ name: "本地插件集", plugins: [{ id:"fixture.distributed", name:"分发虚构影院", description:"虚构源列表简介", version:"1.0.0", url:"source.js" }] }));
   await rail.getByRole("button", { name: "插件中心", exact: true }).click();
   await page.evaluate(paths => { window.__HPP_TEST_FILE_PATHS__ = paths; }, [join(importDir, "manifest.json")]);
+  await importTab(page);
   await page.getByRole("button", { name: "选择插件文件", exact: true }).click();
   await page.getByRole("heading", { name: "本地插件集", exact: true }).waitFor();
   await page.getByLabel("插件导入预览").getByText("虚构源列表简介", { exact: true }).waitFor();
   await page.getByRole("checkbox", { name: "仅安装，暂不启用", exact: true }).check();
   await page.getByRole("button", { name: "导入所选插件（1）", exact: true }).click();
   const distributed = page.locator("article.hpp-plugin").filter({ has: page.getByRole("heading", { name: /^分发虚构影院/ }) });
+  await installedTab(page);
   await distributed.getByText("已停用", { exact: true }).waitFor();
   await distributed.getByText(/本地插件集 · /).waitFor();
+  await importTab(page);
   await page.getByRole("checkbox", { name: "仅安装，暂不启用", exact: true }).uncheck();
   const remoteList = version => JSON.stringify({ name:"远程插件集", plugins:[
     {id:"fixture.distributed",name:"分发虚构影院",version,url:"source"},
@@ -416,36 +434,50 @@ try {
   await page.getByRole("heading", { name: "远程插件集", exact: true }).waitFor();
   await page.getByRole("button", { name: "保存订阅 · 远程插件集", exact: true }).click();
   await page.getByRole("button", { name: "刷新订阅 · 远程插件集", exact: true }).waitFor();
-  assert.equal(await page.getByRole("button", { name: "导入所选插件（1）", exact: true }).count(), 1);
+  await page.getByRole("button", { name: "导入所选插件（3）", exact: true }).waitFor();
   assert.equal(distributionRequests.some(r => r.path.endsWith("/source")), false);
   await page.getByRole("checkbox", { name: "选择 不下载条目", exact: true }).uncheck();
   await page.getByRole("button", { name: "导入所选插件（2）", exact: true }).click();
   await page.getByLabel("插件导入结果").getByText(/文件的 id 或 version 与列表不一致/).waitFor();
+  await installedTab(page);
   await distributed.getByText("已就绪", { exact: true }).waitFor();
   assert.equal(distributionRequests.some(r => r.path.endsWith("/missing")), false);
   distributionFiles.set("/distribution/set/list", remoteList("1.1.0")); distributionFiles.set("/distribution/set/source", distributionCode("1.1.0", true));
+  await importTab(page);
   await page.getByRole("button", { name: "检查插件更新", exact: true }).click();
   await page.getByRole("button", { name: "安装所选更新（1）", exact: true }).waitFor();
+  await installedTab(page);
   await distributed.getByText("fixture.distributed · v1.0.0", { exact: true }).waitFor();
+  await importTab(page);
   await page.getByRole("button", { name: "安装所选更新（1）", exact: true }).click();
+  await installedTab(page);
   await distributed.getByText("运行失败", { exact: true }).waitFor();
   await distributed.getByRole("button", { name: "恢复上一可用版本", exact: true }).click();
+  await installedTab(page);
   await distributed.getByText("已就绪", { exact: true }).waitFor();
   await distributed.getByText("fixture.distributed · v1.0.0", { exact: true }).waitFor();
   distributionFiles.set("/distribution/set/list", remoteList("1.2.0")); distributionFiles.set("/distribution/set/source", distributionCode("1.2.0"));
+  await importTab(page);
   await page.getByRole("button", { name: "检查插件更新", exact: true }).click();
   await page.getByRole("button", { name: "安装所选更新（1）", exact: true }).click();
+  await installedTab(page);
   await distributed.getByText("fixture.distributed · v1.2.0", { exact: true }).waitFor();
+  await installedTab(page);
   await distributed.getByText("已就绪", { exact: true }).waitFor();
   await rail.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("checkbox", { name: "启动时自动检查插件更新", exact: true }).check();
-  await page.getByRole("checkbox", { name: "自动安装插件更新", exact: true }).check();
+  for (const name of ["启动时自动检查插件更新", "自动安装插件更新"]) {
+    const checkbox = page.getByRole("checkbox", { name, exact: true });
+    if (!await checkbox.isChecked()) await checkbox.click();
+    await page.waitForFunction(label => [...document.querySelectorAll("label")].some(e => e.textContent === label && e.querySelector("input")?.checked && !e.querySelector("input").disabled), name);
+  }
   await rail.getByRole("button", { name: "插件中心", exact: true }).click();
+  await importTab(page);
   await page.getByRole("button", { name: "取消订阅 · 远程插件集", exact: true }).click();
   await page.getByRole("button", { name: "保存订阅 · 远程插件集", exact: true }).waitFor({ state: "detached" });
   await page.screenshot({ path: join(output, "plugin-distribution.png") });
   assert(distributionRequests.every(r => !r.headers.cookie && !r.headers.authorization && !r.headers["x-fixture-token"]));
   report.passed.push("Native-file selection transport, local relative manifest, install-only, redirected extensionless remote manifest, selected-only downloads, identity mismatch isolation, update preview without replacement, failed-update restoration and selected higher-version installation");
+  }
   assert.deepEqual(errors, []); assert.deepEqual(report.external, []); assert(upstream.every(r => r.url === "/" || r.token === "local-fixture"));
   await writeFile(join(output, "upstream.json"), JSON.stringify(upstream, null, 2));
 } catch (e) {

@@ -5,12 +5,12 @@ import { usePluginRequests } from "./usePluginRequests";
 import { useAssetUrls } from "./MediaCards";
 import { Notice } from "./BrowsePages";
 
-export default function CommentsPanel({ plugin, mediaId, episodeId, articleId }: { plugin: InstalledPlugin; mediaId?: string; episodeId?: string; articleId?: string }) {
-  const [open, setOpen] = useState(false), [scope, setScope] = useState("media");
+export default function CommentsPanel({ plugin, mediaId, episodeId, articleId, embedded = false }: { plugin: InstalledPlugin; mediaId?: string; episodeId?: string; articleId?: string; embedded?: boolean }) {
+  const [open, setOpen] = useState(embedded), [scope, setScope] = useState("media");
   if (!plugin.methods.includes("comments.list")) return null;
   const target: CommentTarget = articleId ? { kind: "article", articleId } : { kind: "media", mediaId: mediaId!, ...(scope === "episode" && episodeId ? { episodeId } : {}) };
   return <section className="hpp-comments" aria-label="评论面板">
-    <div className="hpp-section-title"><h3>评论</h3><button aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? "收起评论" : "查看评论"}</button></div>
+    {!embedded && <div className="hpp-section-title"><h3>评论</h3><button aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? "收起评论" : "查看评论"}</button></div>}
     {open && <>{!articleId && <div className="hpp-source-tabs"><button aria-pressed={scope === "media"} onClick={() => setScope("media")}>作品评论</button>{episodeId && <button aria-pressed={scope === "episode"} onClick={() => setScope("episode")}>当前分集评论</button>}</div>}
       <CommentList key={JSON.stringify(target)} plugin={plugin} target={target}/></>}
   </section>;

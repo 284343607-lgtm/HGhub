@@ -41,6 +41,7 @@ export default function CloudLibrary({ plugin: p, open }: { plugin: InstalledPlu
     try { for (const item of page.items) await host.put(p.meta.id, item, { favorite: true }); setNotice("本页条目已导入本地收藏"); }
     catch (e) { setError(pluginError(e)); } finally { setBusy(false); }
   };
+  useEffect(() => { void load("favorites"); return () => { epoch.current++; request.cancelAll(); }; }, [p.meta.id, p.revision]);
   return <div className="hpp-cloud-library"><Notice error={error}/><div className="hpp-source-tabs">
     {([["favorites", "云端收藏"], ["likes", "云端点赞"], ["history", "云端历史"]] as const).map(([id, label]) => <button key={id} disabled={busy} aria-pressed={kind === id} onClick={() => void load(id)}>{label}</button>)}
     {p.methods.includes("library.listFollowing") && <button disabled={busy} aria-pressed={kind === "following"} onClick={() => void load("following")}>云端关注</button>}

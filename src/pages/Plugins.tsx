@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { IGrid } from "../icons";
+import { ICpu, IBack, IPlus, IGrid } from "../icons";
 import { pluginError, type InstalledPlugin } from "../plugins/client";
 import type { Endpoint, Setting } from "../plugins/protocol";
 import { usePluginRequests } from "../plugins/usePluginRequests";
@@ -11,32 +11,35 @@ function ErrorMessage({ error }: { error: string }) { return error ? <div classN
 export default function Plugins({onBack,focusId}: {onBack:()=>void;focusId?:string}) {
   const host=useHost();
   const plugins=host.plugins.filter(p=>host.prefs.mature||!p.meta.mature);
-  return <div className="hpp-page"><header className="hpp-header"><button onClick={onBack}>返回</button><div><h1>插件中心</h1><p>导入来源与解析器，构建你的媒体库</p></div></header><ErrorMessage error={host.error}/><PluginManagement plugins={plugins} reload={host.reload} focusId={focusId}/></div>;
+  return <div className="hpp-page hpp-plugins-page"><header className="hpp-header"><button aria-label="返回" onClick={onBack}><IBack size={20}/></button><div><h1>插件中心</h1><p>让喜欢的内容，在这里相遇</p></div></header><ErrorMessage error={host.error}/><PluginManagement plugins={plugins} reload={host.reload} focusId={focusId}/></div>;
 }
 function PluginManagement({ plugins, reload, focusId = "" }: { plugins: InstalledPlugin[]; reload: () => Promise<void>; focusId?: string }) {
   const request = usePluginRequests();
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [options, setOptions] = useState<string | null>(focusId || null);
-  useEffect(() => { if (focusId) setOptions(focusId); }, [focusId]);
+  const [tab, setTab] = useState<"installed" | "import">("installed");
+  useEffect(() => { if (focusId) { setOptions(focusId); setTab("installed"); } }, [focusId]);
   const perform = async (action: string, params: Record<string, unknown>) => { setBusy(true); setError(""); try { await request(action, params); await reload(); } catch (e) { setError(pluginError(e)); } finally { setBusy(false); } };
-  return <div className="hpp-scroll"><div className="hpp-content">
-    <PluginDistribution plugins={plugins} reload={reload} />
+  return <><nav className="hpp-provider-tabs" aria-label="插件中心分栏"><button aria-pressed={tab === "installed"} onClick={() => setTab("installed")}><ICpu size={17}/>已安装 <small>{plugins.length}</small></button><button aria-pressed={tab === "import"} onClick={() => setTab("import")}><IPlus size={17}/>导入与订阅</button></nav><div className="hpp-scroll"><div className="hpp-content">
+    <div hidden={tab !== "import"}><PluginDistribution plugins={plugins} reload={reload} /></div>
+    <div hidden={tab !== "installed"}>
     <ErrorMessage error={error} />
-    <div className="hpp-section-title"><h2>已安装插件</h2><span>{plugins.length} 个插件</span></div>
-    {!plugins.length && <p className="hpp-muted">还没有安装插件。选择文件、输入列表地址，或粘贴完整插件代码。</p>}
-    <div className="hpp-installed">{[...plugins.filter(p=>p.meta.kind!=="resolver"),...plugins.filter(p=>p.meta.kind==="resolver")].map(p => <article className="hpp-plugin" key={p.meta.id}>
+    <div className="hpp-section-title"><p className="hpp-muted">管理片源、账号与播放解析器</p><button className="primary" onClick={() => setTab("import")}><IPlus size={15}/>添加插件</button></div>
+    {!plugins.length && <div className="hpp-empty"><ICpu size={40}/><h2>你的插件库，等待第一位成员</h2><p>导入数据源开始观看，或添加解析器拓展播放能力。</p><button className="primary" onClick={() => setTab("import")}>导入插件</button></div>}
+    {(["source","resolver"] as const).map(kind => <section className="hpp-plugin-group" key={kind}>{plugins.some(p => (p.meta.kind === "resolver") === (kind === "resolver")) && <h2>{kind === "source" ? "数据源" : "解析器"}<small>{plugins.filter(p => (p.meta.kind === "resolver") === (kind === "resolver")).length}</small></h2>}<div className="hpp-installed">{plugins.filter(p => (p.meta.kind === "resolver") === (kind === "resolver")).map(p => <article className="hpp-plugin" key={p.meta.id}>
       <div className="hpp-plugin-heading"><span className="hpp-plugin-icon"><IGrid size={22} /></span><div><h3>{p.meta.name}<small>{p.meta.kind === "resolver" ? "解析器" : "数据源"}</small></h3><p>{p.meta.id} · v{p.meta.version}</p></div><span className={`hpp-status ${p.status}`}>{statuses[p.status]}</span></div>
       {p.meta.description && <p>{p.meta.description}</p>}<ErrorMessage error={p.error?.message || ""} /><p className="hpp-muted">{p.origin?.manifestName && <span>{p.origin.manifestName} · </span>}{p.source || "粘贴代码"}</p>
       <div className="hpp-plugin-footer"><span>{p.methods.length} 项已发现能力{p.endpoint ? ` · ${p.endpoint.label || p.endpoint.id}` : ""}</span><div>
         <button disabled={busy} onClick={() => void perform("enable", { id: p.meta.id, enabled: !p.enabled })}>{p.enabled ? "停用" : "启用"}</button>
-        {p.enabled && <button disabled={busy} onClick={() => void perform("retry", { id: p.meta.id })}>重试初始化</button>}
+        {p.enabled && p.status !== "ready" && <button disabled={busy} onClick={() => void perform("retry", { id: p.meta.id })}>重试初始化</button>}
         {p.canRestore && <button disabled={busy} onClick={() => void perform("restore", { id: p.meta.id })}>恢复上一可用版本</button>}
         <button onClick={() => setOptions(options === p.meta.id ? null : p.meta.id)}>{options === p.meta.id ? "收起" : "设置与日志"}</button>
         <button className="danger" disabled={busy} onClick={() => { if (window.confirm(`移除「${p.meta.name}」及其本地存储与 Cookie？`)) void perform("remove", { id: p.meta.id }); }}>移除</button>
       </div></div>
       {options === p.meta.id && <PluginOptions key={p.meta.id + p.revision} plugin={p} reload={reload} />}
-    </article>)}</div>
-  </div></div>;
+    </article>)}</div></section>)}
+    </div>
+  </div></div></>;
 }
 
 function PluginOptions({ plugin: p, reload }: { plugin: InstalledPlugin; reload: () => Promise<void> }) {

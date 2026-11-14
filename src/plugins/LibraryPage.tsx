@@ -6,11 +6,13 @@ import { usePluginRequests } from "./usePluginRequests";
 import { useAssetUrls } from "./MediaCards";
 import type { UserProfile } from "./protocol";
 import CloudLibrary from "./CloudLibrary";
+import { ICpu, IChevR, ISettings, IStar, IHist, IUser } from "../icons";
 
 export default function LibraryPage({ open, manage, settings }: { open: OpenMedia; manage: (id?: string) => void; settings: () => void }) {
-  const host = useHost(), request = usePluginRequests(), [kind, setKind] = useState<"favorite" | "history" | "tracking">("favorite");
+  const host = useHost(), request = usePluginRequests(), [kind, setKind] = useState<"favorite" | "cloud" | "history">("favorite");
+  const [trackingOnly, setTrackingOnly] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [notice, setNotice] = useState("");
-  const visible = host.library.filter(e => kind === "history" ? !!e.lastProgress : kind === "favorite" ? e.favorite : e.tracking)
+  const visible = host.library.filter(e => kind === "history" ? !!e.lastProgress : trackingOnly ? e.tracking : e.favorite)
     .filter(e => host.prefs.mature || !host.plugins.find(p => p.meta.id === e.pluginId)?.meta.mature)
     .sort((a, b) => kind === "history" ? (b.lastProgress?.at || 0) - (a.lastProgress?.at || 0) : b.updatedAt - a.updatedAt);
   const checkUpdates = async () => {
@@ -32,19 +34,22 @@ export default function LibraryPage({ open, manage, settings }: { open: OpenMedi
       await host.refreshLibrary(); setNotice(`已检查追更，${count} 部作品有变化`);
     } finally { setBusy(false); }
   };
-  return <BrowseFrame title="我的" tools={<><button onClick={() => manage()}>插件</button><button onClick={settings}>设置</button></>}>
-    <Notice error={error || host.error}/><div className="hpp-source-tabs">{([ ["favorite", "本地收藏"], ["history", "观看历史"], ["tracking", "追更"] ] as const).map(([id, label]) => <button key={id} className={kind === id ? "selected" : ""} onClick={() => setKind(id)}>{label}</button>)}
-    {kind === "tracking" && <button disabled={busy} onClick={() => void checkUpdates()}>检查追更</button>}{kind === "history" && <button onClick={() => void pluginCommand("library.history.clear").then(host.refreshLibrary).catch(e => setError(pluginError(e)))}>清空观看历史</button>}</div>
-    {notice && <p role="status">{notice}</p>}
-    <section className="hpp-local-library">{visible.map(entry => {
-      const plugin = host.sources.find(p => p.meta.id === entry.pluginId), installed = host.plugins.find(p => p.meta.id === entry.pluginId);
-      return <article className="hpp-local-entry" key={libraryKey(entry.pluginId, entry.mediaId)}><h3>{entry.item.title}</h3><p className="hpp-muted">{installed?.meta.name || entry.pluginId} · {!plugin ? "来源不可用" : entry.latestLabel || (entry.lastProgress ? `看到 ${Math.floor(entry.lastProgress.positionSec)} 秒` : "已保存到本地")}</p>
-        <button disabled={!plugin?.methods.includes("media.getDetail")} onClick={() => open(entry.pluginId, entry.mediaId)}>{kind === "history" ? "继续观看" : "查看作品"}</button>
-        {entry.favorite && <button onClick={() => void host.put(entry.pluginId, entry.item, { favorite: false }).catch(e => setError(pluginError(e)))}>取消本地收藏</button>}<AssociatedSources entry={entry} open={open}/></article>;
-    })}</section>{!visible.length && <p className="hpp-muted">还没有{kind === "history" ? "观看记录" : kind === "tracking" ? "追更作品" : "本地收藏"}。</p>}
-    <div className="hpp-section-title"><h2>插件账号与云端片库</h2></div>{host.sources.filter(p => p.methods.includes("auth.getProfile") || p.methods.includes("library.listMedia")).map(p => <Account key={p.meta.id + p.revision} plugin={p} open={open} manage={() => manage(p.meta.id)}/>)}
-    {!host.sources.length && <EmptySources manage={() => manage()}/>}
-  </BrowseFrame>;
+  const accounts = host.sources.filter(p => p.methods.includes("auth.getProfile") || p.methods.includes("library.listMedia"));
+  return <div className="hpp-page hpp-library-page"><header className="shrink-0 px-4 pb-2 flex items-center" style={{paddingTop:"calc(var(--sat,0px) + 14px)"}}><h1 className="text-[24px] font-bold text-on leading-none">我的片库</h1><button aria-label="设置" onClick={settings} className="ml-auto w-9 h-9 rounded-full bg-s3 flex items-center justify-center"><ISettings size={17}/></button></header><div className="hpp-scroll"><div className="hpp-content">
+    <button className="hpp-library-plugins" onClick={() => manage()}><span className="hpp-plugin-icon"><ICpu size={24}/></span><span><strong>插件中心</strong><small>管理片源、导入插件与账号登录</small></span><IChevR size={18}/></button>
+    <nav className="hpp-library-tabs" aria-label="片库分栏">{([["favorite","收藏",IStar],["cloud","来自片源",IUser],["history","历史",IHist]] as const).map(([id,label,Icon])=><button key={id} aria-pressed={kind===id} onClick={()=>setKind(id)}><Icon size={18}/>{label}</button>)}</nav>
+    <Notice error={error || host.error}/>{notice && <p role="status">{notice}</p>}
+    {kind === "cloud" ? <><p className="hpp-library-caption">登录各片源，查看它们的收藏与观看记录。</p>{accounts.map(p=><Account key={p.meta.id+p.revision} plugin={p} open={open} manage={()=>manage(p.meta.id)}/>)}{!accounts.length&&<div className="hpp-empty"><IUser size={36}/><h2>还没有可用的片源账号</h2><p>添加支持账号或云端片库的数据源后，即可在这里查看。</p><button onClick={()=>manage()}>前往插件中心</button></div>}</> : <>
+      <div className="hpp-library-toolbar"><span>{visible.length} 部作品 · 仅保存在本机</span>{kind==="favorite"?<><button aria-pressed={trackingOnly} onClick={()=>setTrackingOnly(v=>!v)}>只看追更</button>{trackingOnly&&<button disabled={busy} onClick={()=>void checkUpdates()}>检查追更</button>}</>:<button disabled={!visible.length} onClick={()=>{if(window.confirm("清空本机观看历史？收藏不会被删除。"))void pluginCommand("library.history.clear").then(host.refreshLibrary).catch(e=>setError(pluginError(e)));}}>清空观看历史</button>}</div>
+      <section className="hpp-local-library">{visible.map(entry=><LibraryCard key={libraryKey(entry.pluginId,entry.mediaId)} entry={entry} open={open} history={kind==="history"} fail={setError}/>)}</section>
+      {!visible.length&&<div className="hpp-empty">{kind==="history"?<IHist size={38}/>:<IStar size={38}/>}<h2>{kind==="history"?"你的下一段故事，从这里继续":trackingOnly?"还没有追更作品":"把喜欢的作品，留在这里"}</h2><p>{kind==="history"?"播放过的作品与观看进度会自动保存。":"在播放器或作品详情中收藏，无需登录。"}</p></div>}
+    </>}
+  </div></div></div>;
+}
+function LibraryCard({entry,open,history,fail}:{entry:LibraryEntry;open:OpenMedia;history:boolean;fail:(error:string)=>void}) {
+  const host=useHost(),plugin=host.sources.find(p=>p.meta.id===entry.pluginId),installed=host.plugins.find(p=>p.meta.id===entry.pluginId);
+  const urls=useAssetUrls(entry.pluginId,plugin&&entry.item.cover?[entry.item.cover]:[]),progress=entry.lastProgress;
+  return <article className="hpp-local-entry"><button className="hpp-library-cover" aria-label={history ? "继续观看" : "查看作品"} disabled={!plugin?.methods.includes("media.getDetail")} onClick={()=>open(entry.pluginId,entry.mediaId)}><div className="hpp-poster">{urls[0]?<img src={urls[0]} alt="" loading="lazy"/>:<span>{entry.item.title.slice(0,2)}</span>}<small>{!plugin?"来源不可用":entry.latestLabel|| (history?"继续观看":entry.tracking?"追更中":"已收藏")}</small>{progress?.durationSec&&<progress max={progress.durationSec} value={progress.positionSec}/>}</div><h3>{entry.item.title}</h3></button><p className="hpp-muted">{installed?.meta.name||"来源已移除"}{history&&progress?` · 看到 ${Math.floor(progress.positionSec/60)}:${String(Math.floor(progress.positionSec%60)).padStart(2,"0")}`:""}</p><details><summary>管理作品</summary>{entry.favorite&&<button onClick={()=>void host.put(entry.pluginId,entry.item,{favorite:false}).catch(e=>fail(pluginError(e)))}>取消本地收藏</button>}<AssociatedSources entry={entry} open={open}/></details></article>;
 }
 function AssociatedSources({ entry, open }: { entry: LibraryEntry; open: OpenMedia }) {
   const host = useHost(), request = usePluginRequests(), [expanded, setExpanded] = useState(false);
@@ -72,6 +77,6 @@ function Account({ plugin: p, open, manage }: { plugin: InstalledPlugin; open: O
   useEffect(() => onPluginAuthFailure(f => { if (f.id === p.meta.id) { epoch.current++; setProfile(null); if (!f.silent) setError(f.message); } }), [p.meta.id]);
   useEffect(() => onPluginAuthSuccess(id => { if (id === p.meta.id) { setError(""); getProfile(); } }), [p.meta.id]);
   return <section className="hpp-account"><div className="hpp-section-title"><h3>{p.meta.name}</h3><button onClick={manage}>账号与操作</button></div><Notice error={error}/>{profile ? <div className="hpp-profile">{avatar[0] && <img src={avatar[0]} alt=""/>}<strong>{profile.name}</strong><p>{profile.description}</p></div> : p.methods.includes("auth.getProfile") && <p className="hpp-muted">未登录此插件</p>}
-    {p.methods.includes("library.listMedia") && <CloudLibrary plugin={p} open={open}/>}
+    {p.methods.includes("library.listMedia") && (!p.methods.includes("auth.getProfile") || profile) && <CloudLibrary plugin={p} open={open}/>}
   </section>;
 }

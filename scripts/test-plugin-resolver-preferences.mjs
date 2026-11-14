@@ -1,3 +1,4 @@
+import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 
@@ -24,7 +25,7 @@ export async function testResolverPreferences({ page, dispatch, base, output, re
   const selected = async name => { await choose(name).and(page.locator(".selected")).waitFor(); assert.match(await choose(name).getAttribute("class"), /selected/); };
   const playing = () => page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.3);
   const openDetail = async () => {
-    await rail.getByRole("button", { name: "首页", exact: true }).click();
+    await openRecommendations(page,"站点路由影院");
     await page.getByRole("button", { name: /站点路由作品/ }).click();
     await page.getByRole("heading", { name: "站点路由作品", exact: true }).last().waitFor();
   };
@@ -57,8 +58,9 @@ export async function testResolverPreferences({ page, dispatch, base, output, re
   await page.getByRole("button", { name: "站点甲", exact: true }).click(); await selected(names[1]); await playing();
   // ContentPlayer (live) shares exactly the same selection and remember flow.
   await rail.getByRole("button", { name: "首页", exact: true }).click();
+  await selectCategorySource(page,"站点路由影院");
   await page.getByRole("button", { name: "直播 · 站点路由影院", exact: true }).click();
-  await page.getByRole("button", { name: /站点甲直播/ }).click(); await selected(names[1]); await playing();
+  await page.getByRole("button", { name: /站点甲直播/ }).click(); await page.locator(".hpp-content-settings summary").click(); await selected(names[1]); await playing();
   await chooser.getByRole("checkbox", { name: "记住这个站点的选择", exact: true }).check();
   await choose(names[0]).click(); await playing();
   await chooser.getByRole("status").filter({ hasText: "已记住" }).waitFor();
