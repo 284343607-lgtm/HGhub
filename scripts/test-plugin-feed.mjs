@@ -1,0 +1,84 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+export async function testPluginFeed({ page, dispatch, root, base, output, report, rail }) {
+  const code = (await readFile(join(root, "src-tauri/crates/hpp/tests/fixtures/feed.js"), "utf8")).replaceAll("__FIXTURE_BASE__", base);
+  assert((await dispatch({ action: "import", params: { code } })).ok);
+  const inspect = async () => {
+    const result = await dispatch({ action: "call", params: { id: "fixture.feed", method: "ui.submit", args: { actionId: "inspect", values: {} }, requestId: crypto.randomUUID() } });
+    assert(result.ok); return JSON.parse(result.value.message);
+  };
+  const progress = async (mediaId, episodeId, playlistId) => {
+    const result = await dispatch({ action: "library.progress.get", params: { pluginId: "fixture.feed", mediaId, episodeId, ...(playlistId ? { playlistId } : {}) } });
+    assert(result.ok); return result.value;
+  };
+  await page.evaluate(() => { const prefs = JSON.parse(localStorage.getItem("hpp.preferences") || "{}"); localStorage.setItem("hpp.preferences", JSON.stringify({ ...prefs, autoNext: false })); });
+  await page.reload();
+  await rail.getByRole("button", { name: "首页", exact: true }).click();
+  await page.getByRole("button", { name: "信息流 · 虚构信息流", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  const entry = page.getByRole("article", { name: "当前信息流内容" });
+  await entry.getByRole("heading", { name: "直接入口短片", exact: true }).waitFor();
+  assert.equal((await inspect())["last.media.getDetail"], undefined);
+  await page.getByLabel("信息流导航").getByText("1 / 1", { exact: true }).waitFor();
+  const navigation = await page.getByLabel("信息流导航").boundingBox();
+  assert(navigation && navigation.y >= 0 && navigation.y + navigation.height <= page.viewportSize().height, "Feed navigation stays inside the window");
+  await entry.getByRole("button", { name: "本地收藏", exact: true }).click();
+  await entry.getByRole("button", { name: "取消本地收藏", exact: true }).waitFor();
+  await page.evaluate(() => { const v = document.querySelector("video"); v.currentTime = 2; });
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
+  const pauseSaved = page.waitForResponse(response => {
+    if (!response.url().endsWith("/__hpp_test_ipc")) return false;
+    const payload = response.request().postDataJSON();
+    return payload.action === "library.progress.set" && payload.params.mediaId === "feed:direct" && payload.params.positionSec >= 2;
+  });
+  await page.evaluate(() => document.querySelector("video").pause());
+  await page.waitForFunction(() => document.querySelector("video")?.paused);
+  await pauseSaved;
+  assert((await progress("feed:direct", "entry:real")).positionSec >= 2);
+  await page.getByRole("button", { name: "下一条", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "虚构分页失败" }).waitFor();
+  await entry.getByRole("heading", { name: "直接入口短片", exact: true }).waitFor();
+  await page.getByRole("button", { name: "重试信息流", exact: true }).click();
+  await entry.getByRole("heading", { name: "详情入口短片", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  const fallback = await inspect();
+  assert.deepEqual(fallback["last.media.listEpisodes"], { mediaId: "feed:detail", playlistId: "playlist:real", cursor: "episodes:cursor", limit: 20 });
+  assert.equal(fallback["last.media.resolvePlayback"].episodeId, "episode:real");
+  await page.getByRole("button", { name: "下一条", exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some(b => b.textContent === "下一条" && b.disabled));
+  await page.getByLabel("信息流导航").getByText("2 / 2", { exact: true }).waitFor();
+  await entry.getByRole("heading", { name: "详情入口短片", exact: true }).waitFor();
+  await page.getByRole("button", { name: "上一条", exact: true }).click();
+  await entry.getByRole("heading", { name: "直接入口短片", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
+  assert((await progress("feed:direct", "entry:real")).positionSec >= 2);
+  assert((await progress("feed:detail", "episode:real", "playlist:real")).positionSec > 0);
+  await page.getByRole("button", { name: "重试播放", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
+  const reports = (await inspect()).reports.filter(r => r.mediaId === "feed:direct");
+  assert.equal(reports.filter(r => r.event === "start").length, 2, "Refresh must not generate another start");
+  assert(reports.some(r => r.event === "pause" && r.episodeId === "entry:real" && r.positionSec >= 2));
+  // With auto-next disabled, an ended event stays on the current entry.
+  await page.evaluate(() => { const v = document.querySelector("video"); v.pause(); v.dispatchEvent(new Event("ended")); });
+  await entry.getByRole("heading", { name: "直接入口短片", exact: true }).waitFor();
+  await page.screenshot({ path: join(output, "feed-player.png") });
+  await page.getByRole("button", { name: "返回", exact: true }).click();
+  assert.equal(await page.locator("video").count(), 0);
+  await page.evaluate(() => { const prefs = JSON.parse(localStorage.getItem("hpp.preferences")); localStorage.setItem("hpp.preferences", JSON.stringify({ ...prefs, autoNext: true })); });
+  await page.reload();
+  await page.getByRole("button", { name: "信息流 · 虚构信息流", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  await page.evaluate(() => document.querySelector("video").dispatchEvent(new Event("ended")));
+  await entry.getByRole("heading", { name: "详情入口短片", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  await page.getByRole("button", { name: "作品详情与选集", exact: true }).click();
+  await page.getByRole("heading", { name: "选集", exact: true }).waitFor();
+  assert.equal(await page.locator("video").count(), 0, "Covered feed must release its player");
+  await page.getByRole("button", { name: "返回", exact: true }).last().click();
+  await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  await rail.getByRole("button", { name: "首页", exact: true }).click();
+  assert.equal(await page.locator("video").count(), 0);
+  report.passed.push("Feed direct entry bypasses detail, fallback uses paged real episode/playlist IDs, duplicate and failed pages retain the current item, repeated cursors stop, favorites and progress persist, refresh avoids duplicate start, auto-next follows its preference and covered/unmounted players stop");
+}
