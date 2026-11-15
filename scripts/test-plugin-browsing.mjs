@@ -21,8 +21,8 @@ export async function testPluginBrowsing({ page, dispatch, root, output, report,
   assert(labels.includes(names[0]) && labels.includes(names[1]), "Both sources appear in the provider bar");
   await tabs.getByRole("button", { name: names[0], exact: true }).click();
   await page.getByRole("button", { name: /分页影院甲 · 分类默认 · 0/ }).waitFor();
-  await page.getByRole("button", {name:"全部",exact:true}).first().click();
-  const scrollToBottom = async () => { await page.locator(".hpp-media-card:visible").first().waitFor(); await page.locator(".hpp-more:visible").last().scrollIntoViewIfNeeded(); };
+  await page.locator(".legacy-category-heading").first().click();
+  const scrollToBottom = async () => { await page.locator(".hpp-media-card:visible, .legacy-search-poster:visible").first().waitFor(); await page.locator(".hpp-more:visible").last().scrollIntoViewIfNeeded(); };
   await scrollToBottom();
   await page.getByRole("alert").filter({ hasText: "虚构下一页失败" }).waitFor();
   assert.equal(await page.locator(".hpp-media-card:visible").count(), 18, "Failed append retains the first page");
@@ -43,6 +43,7 @@ export async function testPluginBrowsing({ page, dispatch, root, output, report,
   assert.equal(await page.getByRole("button", { name: /分类fast · / }).count(), 0, "Filter starts a separate cursor chain");
   const metadataCalls = (await call(ids[0])).filter(c => c.method === "catalog.getCategories").length;
   await rail.getByRole("button", { name: "搜索", exact: true }).click();
+  await page.getByRole("button", { name: "搜索来源与筛选", exact: true }).click();
   await page.getByLabel("搜索范围", { exact: true }).selectOption("single");
   await page.locator(".hpp-scope").getByRole("radio", { name: names[0], exact: true }).check();
   const search = async q => { await page.getByRole("textbox", { name: "搜索所有插件", exact: true }).fill(q); await page.locator(".hpp-search").getByRole("button", { name: "搜索", exact: true }).click(); };
@@ -52,7 +53,7 @@ export async function testPluginBrowsing({ page, dispatch, root, output, report,
   await page.getByRole("button", { name: "重试搜索", exact: true }).click();
   await page.getByRole("button", { name: /搜索fast · 21/ }).waitFor();
   await scrollToBottom(); await page.getByRole("alert").filter({ hasText: "重复分页游标" }).waitFor();
-  assert.equal(await page.locator(".hpp-media-card:visible").count(), 23);
+  assert.equal(await page.locator(".legacy-search-poster:visible").count(), 23);
   assert.equal(await page.getByRole("button", { name: /搜索slow/ }).count(), 0);
   await page.screenshot({ path: join(output, "browsing-pagination.png") });
   await page.getByLabel("搜索范围", { exact: true }).selectOption("multiple");
@@ -84,7 +85,7 @@ export async function testPluginBrowsing({ page, dispatch, root, output, report,
   assert.equal((await call(ids[0])).filter(c => c.method === "catalog.getCategories").length, metadataCalls, "Fulfilled category metadata is cached for the plugin revision");
   const revised = template.replaceAll("__PLUGIN_ID__", ids[0]).replaceAll("__PLUGIN_NAME__", names[0]).replace("分页短剧", "修订后的分类");
   await page.evaluate(async code => { const { pluginCommand } = await import("/src/plugins/client.ts"); await pluginCommand("import", { code }); }, revised);
-  await page.getByRole("heading", { name: "修订后的分类", exact: true }).waitFor();
+  await page.locator(".legacy-category-heading").filter({hasText:"修订后的分类"}).waitFor();
   assert((await call(ids[0])).filter(c => c.method === "catalog.getCategories").length > metadataCalls, "Same-version replacement invalidates category metadata");
   await rail.getByRole("button", { name: "首页", exact: true }).click();
   for (const id of ids) assert((await dispatch({ action: "remove", params: { id } })).ok);

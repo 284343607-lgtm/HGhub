@@ -11,7 +11,7 @@ export async function testFrontend({ page, browser, dispatch, base, ui, root, ou
       const item=(i)=>({id:"film-"+i,title:titles[i%titles.length],entryEpisodeId:"episode-1",cover:${JSON.stringify(base)}+"/cover.svg?theme="+(i%4),type:"short",year:2026,badge:i%3===0?"更新至12集":undefined});
       return {
         feed:{async list({cursor}){if(cursor){if(!await hg.storage.get("retried")){await hg.storage.set("retried",true);throw new hg.PluginError("NETWORK","测试分页重试");}return {items:[item(4),item(5)],next:null};}return {items:[item(0),item(1),item(2),item(3)],next:"next"};}},
-        search:{search(){return {items:[item(0),item(1)],next:null};}},
+        search:{trending(){return ["城市","旅行","山海"];},search(){return {items:[item(0),item(1)],next:null};}},
         comments:{list(){return {items:[{id:"comment-1",author:{name:"本地观众"},text:"用于侧栏排版与播放连续性验收",likes:2}],next:null};}},
         catalog:{getCategories(){return categories.map(c=>({...c,filters:[{id:"year",label:"年份",options:[{id:"2026",label:"2026"}]}],sorts:[{id:"latest",label:"最新"}]}));},list({cursor,filters}){return {items:Array.from({length:8},(_,i)=>({...item(i+(cursor?8:0)),title:(filters?.year?.length?"筛选 · ":"")+titles[i%8]})),next:cursor?null:"more"};}},
         home:{getSections(){return {items:[{id:"recommend",title:"本周精选",layout:"row",items:[item(0),item(1)],more:true}],next:null};},listSection(){return {items:[item(0),item(1)],next:null};}},
@@ -73,7 +73,30 @@ export async function testFrontend({ page, browser, dispatch, base, ui, root, ou
   await rail.getByRole("button",{name:"搜索",exact:true}).click();
   await page.getByRole("textbox",{name:"搜索所有插件"}).fill("城市");
   await page.locator("form.hpp-search").getByRole("button",{name:"搜索",exact:true}).click();
-  await page.locator(".hpp-merged button").first().click();
+  await page.waitForFunction(()=>document.querySelectorAll(".legacy-search-poster").length===2&&[...document.querySelectorAll(".legacy-search-poster img")].every(i=>i.naturalWidth>0));
+  await page.screenshot({animations:"disabled",path:join(output,"restored-search-results.png")});
+  await page.getByRole("button",{name:"清除搜索",exact:true}).click();
+  const history=page.getByRole("region",{name:"搜索历史"});
+  await history.getByRole("button",{name:"城市",exact:true}).click();
+  await page.getByRole("button",{name:"清除搜索",exact:true}).click();
+  assert.equal(await history.getByRole("button",{name:"城市",exact:true}).count(),1);
+  await page.reload();
+  await rail.getByRole("button",{name:"搜索",exact:true}).click();
+  await history.getByRole("button",{name:"城市",exact:true}).waitFor();
+  await page.screenshot({animations:"disabled",path:join(output,"restored-search-history.png")});
+  await history.getByRole("button",{name:"清空",exact:true}).click();
+  await history.waitFor({state:"detached"});
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("hpp.searchHistory"))),[]);
+  await page.getByRole("textbox",{name:"搜索所有插件"}).fill("城市");
+  await page.getByRole("textbox",{name:"搜索所有插件"}).press("Enter");
+  await page.getByRole("button",{name:"搜索来源与筛选",exact:true}).click();
+  await page.getByLabel("搜索范围",{exact:true}).selectOption("single");
+  await page.getByRole("textbox",{name:"搜索所有插件"}).press("Enter");
+  await page.waitForFunction(()=>document.querySelectorAll(".legacy-search-poster").length===2&&[...document.querySelectorAll(".legacy-search-poster img")].every(i=>i.naturalWidth>0));
+  await page.getByLabel("搜索范围",{exact:true}).selectOption("all");
+  await page.getByRole("button",{name:"搜索来源与筛选",exact:true}).click();
+  await page.getByRole("textbox",{name:"搜索所有插件"}).press("Enter");
+  await page.locator(".legacy-search-poster").filter({hasText:"2 个来源"}).first().click();
   await page.locator(".hpp-source-choice button").filter({hasText:"光影放映室"}).first().click();
   await page.waitForFunction(()=>document.querySelector("video")?.currentTime>.2);
   assert.equal(await page.locator(".desktop-controls").count(),1);
@@ -98,6 +121,7 @@ export async function testFrontend({ page, browser, dispatch, base, ui, root, ou
   await page.getByRole("button",{name:"选集",exact:true}).click();
   await page.waitForFunction(()=>document.querySelector(".desktop-dock-panel").getBoundingClientRect().width>=370);
   await page.screenshot({animations:"disabled",path:join(output,"restored-desktop-light.png")});
+  report.passed.push("Search poster images in aggregate/single-source results, source chooser, Enter/clear, deduplicated persistent history and history deletion verified");
   assert.deepEqual(errors,[]);
   report.passed.push("Restored desktop controls seek/speed/lock/fullscreen; episode dock preserves session; category opens same autoplay player with back; grouped settings and source selector");
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:"Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36"});
@@ -143,6 +167,16 @@ export async function testFrontend({ page, browser, dispatch, base, ui, root, ou
   await nav.getByRole("button",{name:"分类",exact:true}).click();await mobile.locator(".hpp-category-preview").first().waitFor();
   await mobile.waitForFunction(()=>document.querySelector(".legacy-row-card img")?.naturalWidth>0);
   await mobile.screenshot({animations:"disabled",path:join(output,"restored-mobile-category.png")});
+  await nav.getByRole("button",{name:"搜索",exact:true}).click();
+  await mobile.getByRole("textbox",{name:"搜索所有插件"}).fill("旅行");
+  await mobile.getByRole("textbox",{name:"搜索所有插件"}).press("Enter");
+  await mobile.waitForFunction(()=>document.querySelectorAll(".legacy-search-poster").length===2&&[...document.querySelectorAll(".legacy-search-poster img")].every(i=>i.naturalWidth>0));
+  await mobile.screenshot({animations:"disabled",path:join(output,"restored-mobile-search.png")});
+  await mobile.setViewportSize({width:320,height:680});
+  assert(await mobile.locator(".legacy-search-page").evaluate(e=>e.scrollWidth<=innerWidth));
+  await mobile.getByRole("button",{name:"清除搜索",exact:true}).click();
+  await mobile.getByRole("region",{name:"搜索历史"}).getByRole("button",{name:"旅行",exact:true}).waitFor();
+  await mobile.setViewportSize({width:390,height:844});
   await nav.getByRole("button",{name:"我的",exact:true}).click();await mobile.getByRole("button",{name:"设置",exact:true}).click();
   await mobile.screenshot({animations:"disabled",path:join(output,"restored-mobile-settings.png")});
   assert.equal(await nav.count(),0);

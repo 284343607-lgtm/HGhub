@@ -91,6 +91,8 @@ try {
   await page.goto(`${ui}tests/plugins.html`);
   if (process.argv.includes("--frontend")) {
     await testFrontend({ page, browser, dispatch, base, ui, root, output, report });
+  } else if (process.argv.includes("--browsing")) {
+    await testPluginBrowsing({ page, dispatch, root, output, report, rail: page.getByRole("navigation", {name:"主导航"}) });
   } else {
   await page.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "插件中心", exact: true }).click();
   await importTab(page);
