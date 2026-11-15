@@ -16,6 +16,7 @@ export interface FeedPresentation {
   title?: string; author?: string; description?: string; score?: number; poster?: string;
   episodeLabel?: string; episodeCount?: number; favorite?: boolean; onFavorite?: () => void;
   panels?: Partial<Record<PlayerPanel, ReactNode>>; social?: ReactNode;
+  onPanelChange?: (panel: PlayerPanel) => void;
   onBack?: () => void; onNext?: () => void; onPrevious?: () => void; onNextEpisode?: () => void;
   queueIndex?: number; total?: number;
 }
@@ -28,7 +29,7 @@ export interface FeedProps extends FeedPresentation {
  * Plugin adapters own metadata, sessions and persistence; this component owns presentation. */
 export default function Feed({media, position, active=true, error="", onRetry, onPosition, onFailure, onPlaying, onStopped, onEnded,
  title="", author="", description="", score, poster:posterUrl, episodeLabel="", episodeCount=0, favorite=false, onFavorite,
- panels={}, social, onBack, onNext, onPrevious, onNextEpisode, queueIndex=0, total=1}: FeedProps) {
+ panels={}, social, onPanelChange, onBack, onNext, onPrevious, onNextEpisode, queueIndex=0, total=1}: FeedProps) {
   const store=useStore(), {muted,setMuted,volume,setVolume}=store;
   const isDesktop=!isMobile, bottomInset=0;
   const boxRef=useRef<HTMLDivElement>(null), videoRef=useRef<VideoHandle>(null);
@@ -52,6 +53,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
   const [err, setErr] = useState("");
   /* 取播放地址失败后手动重试：递增即重新触发拉取 */
   const [panel, setPanel] = useState<PlayerPanel | null>(null);
+  useEffect(() => { if (panel) onPanelChange?.(panel); }, [panel, onPanelChange]);
   /* 续播：拿到时长后再 seek 一次（只对进入时那一条生效） */
   const theater = store.theater;
   const setTheater = store.setTheater;
@@ -595,8 +597,8 @@ export default function Feed({media, position, active=true, error="", onRetry, o
                     <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"><div className="w-9 h-9 spinner" /></div>
                   )}
                   {err && (
-                    <div className="absolute inset-0 z-30 flex items-center justify-center">
-                      <div className="rounded-xl p-5 flex flex-col items-center gap-3 text-[13px] hg-ink-2" style={{ background: "rgba(0,0,0,.74)" }}>
+                    <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                      <div className="rounded-xl p-5 flex flex-col items-center gap-3 text-[13px] hg-ink-2 pointer-events-auto" style={{ background: "rgba(0,0,0,.74)" }}>
                         <span>视频暂时无法加载</span>
                         <span className="text-[10.5px] hg-ink-4 max-w-[240px] text-center break-all">{error || err}</span>
                         <button className="px-4 py-1.5 rounded-full hg-chip-strong hg-link text-[12.5px] font-semibold pressable"
@@ -696,10 +698,10 @@ export default function Feed({media, position, active=true, error="", onRetry, o
 
               {/* 取不到播放地址时播放器不会创建，错误提示要放在播放器外面，否则只会停在封面 */}
               {isActive && !playUrl && !!error && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center">
-                  <div className="rounded-xl p-5 flex flex-col items-center gap-3 text-[13px] hg-ink-2" style={{ background: "rgba(0,0,0,.74)" }}>
+                <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                  <div className="rounded-xl p-5 flex flex-col items-center gap-3 text-[13px] hg-ink-2 pointer-events-auto" style={{ background: "rgba(0,0,0,.74)" }}>
                     <span>视频暂时无法加载</span>
-                    <span className="text-[10.5px] hg-ink-4 max-w-[240px] text-center break-all">{err}</span>
+                    <span className="text-[10.5px] hg-ink-4 max-w-[240px] text-center break-all">{error || err}</span>
                     <button className="px-4 py-1.5 rounded-full hg-chip-strong hg-link text-[12.5px] font-semibold pressable"
                       onClick={() => { setErr(""); setWaiting(true); onRetry?.(); }}>
                       重新加载

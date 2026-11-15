@@ -9,6 +9,13 @@ use std::{
 };
 
 pub type Logs = Arc<Mutex<VecDeque<Value>>>;
+fn bounded_log(text: &str) -> &str {
+    let mut end = text.len().min(2048);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
 pub(crate) fn validation_log(logs: &Logs, level: &str, text: &str, request_id: &str) {
     let mut logs = logs.lock().unwrap();
     let at = now();
@@ -69,7 +76,7 @@ impl Native {
                     .take_while(|l| l["at"].as_u64().unwrap_or(0) + 60000 > now())
                     .count();
                 if count < 240 {
-                    logs.push_back(json!({"at":now(),"level":v["level"],"text":v["text"].as_str().unwrap_or("").chars().take(2048).collect::<String>(),"requestId":scope}));
+                    logs.push_back(json!({"at":now(),"level":v["level"],"text":bounded_log(v["text"].as_str().unwrap_or("")),"requestId":scope}));
                     while logs.len() > 2000 {
                         logs.pop_front();
                     }

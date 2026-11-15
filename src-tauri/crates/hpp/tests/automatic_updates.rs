@@ -6,9 +6,15 @@ use std::sync::{
     Arc,
 };
 
-async fn fixture(State((hits, code)): State<(Arc<AtomicUsize>, Arc<String>)>) -> String {
+async fn fixture(
+    State((hits, code)): State<(Arc<AtomicUsize>, Arc<String>)>,
+    headers: axum::http::HeaderMap,
+) -> String {
     hits.fetch_add(1, Ordering::SeqCst);
-    code.as_str().into()
+    code.replace(
+        "REPLACE",
+        &format!("http://{}/update.js", headers["host"].to_str().unwrap()),
+    )
 }
 
 #[tokio::test]
@@ -116,7 +122,7 @@ async fn startup_check_queues_by_policy_defers_during_playback_and_installs_when
 #[tokio::test]
 async fn startup_policy_off_skips_network_and_automatic_install_off_keeps_updates_available() {
     let hits = Arc::new(AtomicUsize::new(0));
-    let code = Arc::new("unused".into());
+    let code = Arc::new("export const meta={id:'fixture.off',name:'关闭的虚构更新',version:'1.1.0',protocol:1,allowInsecureHttp:true,updateUrl:'REPLACE'};export default()=>({media:{getDetail(){return {id:'x',title:'x',playlists:[{id:'main',episodes:[]}]};},resolvePlayback(){return {streams:[{url:'http://media.example/a',format:'progressive'}]};}}});".into());
     let app = Router::new()
         .route("/update.js", get(fixture))
         .with_state((hits.clone(), code));

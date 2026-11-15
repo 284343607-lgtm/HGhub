@@ -7,7 +7,8 @@ use crate::{
     PluginError, Result,
 };
 use rquickjs::{
-    promise::PromiseHookType, Context, Function, Module, Object, Runtime, Value as JsValue,
+    promise::PromiseHookType, Context, Function, Module, Object, Persistent, Runtime,
+    Value as JsValue,
 };
 use serde_json::{json, Value};
 use std::{
@@ -26,6 +27,8 @@ use tokio_util::sync::CancellationToken;
 const PRELUDE: &str = include_str!("prelude.js");
 type Tokens = Arc<Mutex<HashMap<String, CancellationToken>>>;
 struct Engine {
+    api: Persistent<Object<'static>>,
+    factory: RefCell<Option<Persistent<Function<'static>>>>,
     context: Context,
     runtime: Runtime,
     native: Rc<RefCell<Native>>,
@@ -65,8 +68,8 @@ impl Engine {
                 stop
             })));
         }
-        context
-            .with(|ctx| -> rquickjs::Result<()> {
+        let api = context
+            .with(|ctx| -> rquickjs::Result<Persistent<Object<'static>>> {
                 let n = native.clone();
                 ctx.globals().set(
                     "__hppSync",
@@ -99,12 +102,16 @@ impl Engine {
                         q.borrow_mut().push((id, s));
                     })?,
                 )?;
-                ctx.eval::<(), _>(PRELUDE)?;
-                Ok(())
+                let api: Object = ctx.eval(PRELUDE)?;
+                for name in ["__hppSync", "__hppSend", "__hppFinish"] {
+                    ctx.globals().remove(name)?;
+                }
+                Ok(Persistent::save(&ctx, api))
             })
             .map_err(|e| PluginError::internal(format!("宿主前导脚本加载失败：{e}")))?;
         let active = owner.clone();
         let hook_interrupted = interrupted.clone();
+        let hook_api = api.clone();
         runtime.set_promise_hook(Some(Box::new(move |ctx, kind, p, parent| {
             let k = match kind {
                 PromiseHookType::Init => 0,
@@ -113,7 +120,7 @@ impl Engine {
                 PromiseHookType::Resolve => 3,
             };
             let result = (|| -> rquickjs::Result<String> {
-                let api: Object = ctx.globals().get("__hpp")?;
+                let api = hook_api.clone().restore(&ctx)?;
                 let f: Function = api.get("promiseHook")?;
                 f.call((k, p, parent))
             })();
@@ -126,6 +133,8 @@ impl Engine {
             }
         })));
         Ok(Self {
+            api,
+            factory: RefCell::new(None),
             context,
             runtime,
             native,
@@ -176,8 +185,10 @@ impl Engine {
                     .json_stringify(meta)?
                     .ok_or(rquickjs::Error::Unknown)?
                     .to_string()?;
-                ctx.globals()
-                    .set("__hppFactory", module.get::<_, Function>("default")?)?;
+                *self.factory.borrow_mut() = Some(Persistent::save(
+                    &ctx,
+                    module.get::<_, Function>("default")?,
+                ));
                 Ok(serde_json::from_str(&raw).unwrap_or(Value::Null))
             })
             .map_err(|e| self.error(e))
@@ -187,9 +198,14 @@ impl Engine {
         *self.slice.borrow_mut() = Instant::now();
         self.context
             .with(|ctx| -> rquickjs::Result<String> {
-                let api: Object = ctx.globals().get("__hpp")?;
+                let api = self.api.clone().restore(&ctx)?;
                 let install: Function = api.get("install")?;
-                let factory: Function = ctx.globals().get("__hppFactory")?;
+                let factory = self
+                    .factory
+                    .borrow()
+                    .clone()
+                    .ok_or(rquickjs::Error::Unknown)?
+                    .restore(&ctx)?;
                 let p: rquickjs::Promise = install.call((
                     factory,
                     json!({"meta":meta,"settings":settings,"endpoint":endpoint}).to_string(),
@@ -209,7 +225,7 @@ impl Engine {
         *self.slice.borrow_mut() = Instant::now();
         self.context
             .with(|ctx| {
-                let api: Object = ctx.globals().get("__hpp")?;
+                let api = self.api.clone().restore(&ctx)?;
                 let f: Function = api.get(name)?;
                 f.call::<_, ()>(args)
             })
@@ -235,6 +251,12 @@ impl Engine {
             })?;
         }
         Ok(())
+    }
+}
+impl Drop for Engine {
+    fn drop(&mut self) {
+        // Release the hook's persistent JS reference before the runtime is dropped.
+        self.runtime.set_promise_hook(None);
     }
 }
 fn response(r: Result<Transfer>) -> String {

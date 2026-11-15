@@ -473,12 +473,37 @@ mod tests {
             "https://list.example/index.json"
         );
         assert_eq!(state.subscriptions[0].name, "虚构列表");
-        assert!(updater
+        // A wall-clock rollback must not bypass a persisted automatic cooldown.
+        assert!(!updater
             .reserve(
                 "fixture.one",
                 "https://list.example/index.json",
                 1000 + DAY_MS,
                 true
+            )
+            .unwrap());
+        assert!(!updater
+            .reserve(
+                "fixture.one",
+                "https://list.example/index.json",
+                1000 + 3 * DAY_MS - 1,
+                true
+            )
+            .unwrap());
+        assert!(updater
+            .reserve(
+                "fixture.one",
+                "https://list.example/index.json",
+                1000 + 3 * DAY_MS,
+                true
+            )
+            .unwrap());
+        assert!(updater
+            .reserve(
+                "fixture.one",
+                "https://list.example/index.json",
+                1000 + 3 * DAY_MS + 1,
+                false
             )
             .unwrap());
         updater

@@ -1,4 +1,4 @@
-import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
+import { openRecommendations, selectCategorySource, playerPanel, chooseEpisode } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
     await rail.getByRole("button", { name: "我的", exact: true }).click();
     await page.getByRole("button", {name:"收藏",exact:true}).click();
     await page.locator(".hpp-local-entry").filter({ has: page.getByRole("heading", { name: "虚构互动作品", exact: true }) }).getByRole("button", { name: "查看作品", exact: true }).click();
+    await playerPanel(page, '详情');
     await page.getByRole("heading", { name: "虚构互动作品", exact: true }).first().waitFor();
   };
   await page.reload(); await openDetail();
@@ -31,7 +32,7 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
   });
   assert.deepEqual(reports.map(r => [r.episodeId, r.event]), [["ep:one", "start"], ["ep:one", "heartbeat"], ["ep:one", "pause"], ["ep:one", "heartbeat"], ["ep:one", "end"], ["ep:two", "start"], ["ep:two", "pause"]]);
   assert.equal(reports[0].positionSec, 2); assert.equal(reports[0].durationSec, 90); assert.equal(reports[5].positionSec, 4);
-  await page.getByRole("button", { name: "互动第一集", exact: true }).click();
+  await chooseEpisode(page, '互动第一集');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.evaluate(() => document.querySelector("video").pause());
   await page.waitForTimeout(300);
@@ -39,7 +40,7 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
   const initialEvents = await events();
   assert(initialEvents.some(e => e.method === "progress.report" && e.args.event === "start" && e.args.episodeId === "ep:one"));
   assert(initialEvents.some(e => e.method === "progress.report" && e.args.event === "pause"));
-  await page.getByRole("button", { name: "查看评论", exact: true }).click();
+  await playerPanel(page, '评论');
   await page.getByText("<b>评论纯文本</b>", { exact: true }).waitFor();
   assert.equal(await page.locator(".hpp-comment-text b").count(), 0);
   await page.getByLabel("评论内容", { exact: true }).fill("保留未登录评论");
@@ -50,13 +51,13 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
   await page.getByRole("button", { name: "登录互动账号", exact: true }).click();
   await page.getByText("互动观众", { exact: true }).waitFor();
   await page.getByRole("button", { name: "返回", exact: true }).click();
-  await page.getByRole("button", { name: "云端点赞", exact: true }).click();
+  await playerPanel(page, '详情'); await page.locator('.legacy-panel-body').getByRole('button', { name: '云端点赞', exact: true }).click();
   await page.getByRole("button", { name: "取消云端点赞", exact: true }).waitFor();
   await page.getByRole("button", { name: "云端收藏", exact: true }).click();
   await page.getByRole("button", { name: "取消云端收藏", exact: true }).waitFor();
   await page.getByRole("button", { name: "关注作者 · 虚构作者", exact: true }).click();
   await page.getByRole("button", { name: "取消关注作者 · 虚构作者", exact: true }).waitFor();
-  await page.getByRole("button", { name: "查看评论", exact: true }).click();
+  await playerPanel(page, '评论');
   await page.getByRole("button", { name: "更多评论", exact: true }).click();
   await page.getByText("分页评论二", { exact: true }).waitFor();
   const parent = page.locator("article.hpp-comment").filter({ has: page.getByText("<b>评论纯文本</b>", { exact: true }) });
@@ -80,7 +81,9 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
   await page.waitForFunction(() => document.querySelector('[aria-label="评论内容"]')?.value === "");
   await page.getByRole("button", { name: "当前分集评论", exact: true }).click();
   await page.getByText("<b>评论纯文本</b>", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "互动第二集", exact: true }).click();
+  await chooseEpisode(page, '互动第二集');
+  await playerPanel(page, '评论');
+  await page.getByRole('button', {name:'当前分集评论',exact:true}).click();
   await page.getByText("此来源不支持这类评论。", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "发送评论", exact: true }).count(), 0);
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
@@ -115,7 +118,7 @@ export async function testPluginSocial({ page, dispatch, root, base, output, rep
   assert(libraryEvents.some(e => e.method === "library.listMedia" && e.args.folderId === "folder:opaque"));
   assert(libraryEvents.some(e => e.method === "interact.follow" && e.args.authorId === "creator:opaque" && e.args.on === false));
   await openDetail();
-  await page.getByRole("button", { name: "查看评论", exact: true }).click();
+  await playerPanel(page, '评论');
   await page.getByLabel("评论内容", { exact: true }).fill("取消中的评论");
   await page.getByRole("button", { name: "发送评论", exact: true }).click();
   await page.getByRole("button", { name: "正在发送…", exact: true }).waitFor();

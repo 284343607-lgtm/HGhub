@@ -22,7 +22,7 @@ mod distribution;
 mod endpoints;
 #[path = "updater.rs"]
 mod updater;
-pub use distribution::{ImportPreview, ImportReport, PluginOrigin, UpdateCheck};
+pub use distribution::{DocumentReader, ImportPreview, ImportReport, PluginOrigin, UpdateCheck};
 pub use updater::{Subscription, UpdatePolicy, UpdateState};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -66,6 +66,7 @@ pub struct PluginInfo {
 }
 pub struct PluginManager {
     root: PathBuf,
+    document_reader: Option<Arc<dyn DocumentReader>>,
     plugins: tokio::sync::RwLock<BTreeMap<String, Arc<tokio::sync::Mutex<Installed>>>>,
     mutation: tokio::sync::Mutex<()>,
     strict: Option<bool>,
@@ -122,6 +123,7 @@ impl PluginManager {
         )?;
         Ok(Self {
             root,
+            document_reader: None,
             plugins: tokio::sync::RwLock::new(plugins),
             mutation: tokio::sync::Mutex::new(()),
             strict,
@@ -133,6 +135,10 @@ impl PluginManager {
             sessions: Default::default(),
             library,
         })
+    }
+    pub fn with_document_reader(mut self, reader: Arc<dyn DocumentReader>) -> Self {
+        self.document_reader = Some(reader);
+        self
     }
     fn installed(
         dir: PathBuf,

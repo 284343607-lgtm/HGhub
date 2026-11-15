@@ -42,20 +42,12 @@ export default function FeedPage({ plugin, onBack, active, openMedia }: {
     else if (page?.next) void load(page.next, true);
   };
   const previous = () => setIndex(i => Math.max(0, i - 1));
-  useEffect(() => {
-    if (!active) return;
-    const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input,textarea,select,button,video,[contenteditable=true]")) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.key === "ArrowDown" ? next() : previous(); }
-    };
-    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
-  }, [active, page, index]);
   const current = page?.items[index];
   const app=useStore();
-  return <div className="legacy-home">{current ? <PluginMediaDetail key={current.id} plugin={plugin} mediaId={current.id} entryEpisodeId={current.entryEpisodeId} active={active} onBack={onBack} manage={()=>app.push({kind:"plugins",focusId:plugin.meta.id})} onSwitch={(pluginId,mediaId,start)=>app.push({kind:"media",pluginId,mediaId,start})} presentation={{title:current.title,onNext:page?.next||index+1<(page?.items.length||0)?next:undefined,onPrevious:index?previous:undefined,queueIndex:index,total:page?.items.length}}/>:<div className="hpp-empty"><button onClick={onBack}>返回</button><Notice error={error}/>{busy?"正在读取信息流…":"暂无信息流"}<button onClick={()=>void load(failedCursor.current,advanceAfterRetry.current)}>重试信息流</button></div>}</div>;
+  return <div className="legacy-home">{current ? <PluginMediaDetail key={current.id} plugin={plugin} mediaId={current.id} entryEpisodeId={current.entryEpisodeId} entryItem={current} active={active} onBack={onBack} manage={()=>app.push({kind:"plugins",focusId:plugin.meta.id})} onSwitch={(pluginId,mediaId,start)=>app.push({kind:"media",pluginId,mediaId,start})} presentation={{title:current.title,onNext:page?.next||index+1<(page?.items.length||0)?next:undefined,onPrevious:index?previous:undefined,queueIndex:index,total:page?.items.length}}/>:<div className="hpp-empty"><button onClick={onBack}>返回</button><Notice error={error}/>{busy?"正在读取信息流…":"暂无信息流"}<button onClick={()=>void load(failedCursor.current,advanceAfterRetry.current)}>重试信息流</button></div>}{current && error && <div className="hpp-home-errors"><Notice error={error}/><button disabled={busy} onClick={()=>void load(failedCursor.current,advanceAfterRetry.current)}>重试信息流</button></div>}</div>;
 }
 
 export function FeedEntry({plugin,item,active,onEnded,openMedia,immersive=false}:{plugin:InstalledPlugin;item:MediaItem;active:boolean;onEnded:()=>void;openMedia:(id:string)=>void;immersive?:boolean}) {
  const app=useStore();
- return <PluginMediaDetail plugin={plugin} mediaId={item.id} entryEpisodeId={item.entryEpisodeId} active={active} manage={()=>app.push({kind:"plugins",focusId:plugin.meta.id})} onSwitch={(id,mediaId)=>app.push({kind:"media",pluginId:id,mediaId})} presentation={{title:item.title,onNext:onEnded}}/>;
+ return <PluginMediaDetail plugin={plugin} mediaId={item.id} entryEpisodeId={item.entryEpisodeId} entryItem={item} active={active} manage={()=>app.push({kind:"plugins",focusId:plugin.meta.id})} onSwitch={(id,mediaId)=>app.push({kind:"media",pluginId:id,mediaId})} presentation={{title:item.title,onNext:onEnded}}/>;
 }

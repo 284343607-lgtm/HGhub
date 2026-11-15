@@ -1,4 +1,4 @@
-import { openRecommendations, selectCategorySource } from "./frontend-navigation.mjs";
+import { openRecommendations, selectCategorySource, playerPanel, chooseEpisode } from "./frontend-navigation.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,13 +24,14 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
   };
   await page.reload(); await openRecommendations(page,"原始虚构源");
   await page.getByLabel("原始虚构源的推荐").getByRole("button", { name: /跨源合成作品/ }).click();
-  await page.getByRole("button", { name: "a:actual", exact: true }).click();
+  await chooseEpisode(page, 'a:actual');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.getByRole("button", { name: "本地收藏", exact: true }).click();
   await page.getByRole("button", { name: "取消本地收藏", exact: true }).waitFor();
+  await playerPanel(page, '详情');
   await page.getByRole("button", { name: "追更", exact: true }).click();
   await pauseAt(2);
-  await page.getByRole("button", { name: "换源", exact: true }).click();
+  await playerPanel(page, '播放设置'); await page.getByRole('button', { name: '换源', exact: true }).click();
   let dialog = page.getByRole("dialog", { name: "换源 · 跨源合成作品", exact: true });
   await dialog.getByRole("alert").filter({ hasText: "虚构换源搜索失败" }).waitFor();
   await dialog.locator(".hpp-source-candidates button").filter({ hasText: "候选虚构源" }).first().waitFor();
@@ -42,7 +43,7 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
   await dialog.getByRole("button", { name: "取消换源", exact: true }).click();
   assert.equal((await associations()).length, 0);
   const choose = async id => {
-    await page.getByRole("button", { name: "换源", exact: true }).click();
+    await playerPanel(page, '播放设置'); await page.getByRole('button', { name: '换源', exact: true }).click();
     dialog = page.getByRole("dialog", { name: "换源 · 跨源合成作品", exact: true });
     // Matching candidate IDs are opaque; use their stable sequence through the fixture's labels.
     const candidate = dialog.locator(".hpp-source-candidates button").filter({ hasText: "候选虚构源" });
@@ -62,7 +63,7 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
   const original = await operation("library.get", { pluginId: ids[0], mediaId: "same" });
   assert(original.favorite && original.tracking && original.lastProgress.positionSec >= 2);
   await pauseAt(1);
-  await page.getByRole("button", { name: "换源", exact: true }).click();
+  await playerPanel(page, '播放设置'); await page.getByRole('button', { name: '换源', exact: true }).click();
   dialog = page.getByRole("dialog", { name: "换源 · 跨源合成作品", exact: true });
   await dialog.locator(".hpp-source-candidates button").filter({ hasText: "原始虚构源" }).click();
   await dialog.getByRole("status").filter({ hasText: "优先使用新来源进度" }).waitFor();
@@ -88,7 +89,7 @@ export async function testPluginSourceSwitch({ page, dispatch, root, base, outpu
   await originalCard.getByRole("button", { name: "关联来源", exact: true }).click();
   await originalCard.getByRole("button", { name: /候选虚构源/ }).first().waitFor();
   await originalCard.getByRole("button", { name: "查看作品", exact: true }).click();
-  await page.getByRole("button", { name: "a:actual", exact: true }).click();
+  await chooseEpisode(page, 'a:actual');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2.5);
   await page.evaluate(() => document.querySelector("video").pause());
   await choose("paged");

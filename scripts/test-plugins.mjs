@@ -1,4 +1,4 @@
-import { openRecommendations, installedTab, importTab } from "./frontend-navigation.mjs";
+import { openRecommendations, installedTab, importTab, playerPanel, chooseEpisode } from "./frontend-navigation.mjs";
 // Windows integration: real Rust/QuickJS + real React + Edge media decoding.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -93,6 +93,9 @@ try {
     await testFrontend({ page, browser, dispatch, base, ui, root, output, report });
   } else if (process.argv.includes("--browsing")) {
     await testPluginBrowsing({ page, dispatch, root, output, report, rail: page.getByRole("navigation", {name:"主导航"}) });
+  } else if (process.argv.some(arg => ['--social','--extra','--feed','--switch','--resolvers'].includes(arg))) {
+    const suites = {'--social':testPluginSocial,'--extra':testPluginExtraContent,'--feed':testPluginFeed,'--switch':testPluginSourceSwitch,'--resolvers':testResolverPreferences};
+    for (const [flag, suite] of Object.entries(suites)) if (process.argv.includes(flag)) await suite({page,dispatch,root,base,output,report,rail:page.getByRole('navigation',{name:'主导航'})});
   } else {
   await page.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "插件中心", exact: true }).click();
   await importTab(page);
@@ -111,12 +114,11 @@ try {
   await page.getByRole("button", { name: "搜索", exact: true }).first().click();
   await page.getByRole("textbox", { name: "搜索所有插件" }).fill("虚构"); await page.locator(".hpp-search").getByRole("button", { name: "搜索", exact: true }).click();
   await page.getByText("合成影像 · HGhub", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "本地虚构影院 · 1", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector(".hpp-poster img")?.naturalWidth > 0);
+  await page.waitForFunction(() => document.querySelector(".legacy-search-poster img")?.naturalWidth > 0);
   await page.screenshot({ path: join(output, "library-dark.png") });
   await page.evaluate(() => document.documentElement.classList.add("theme-light")); await page.screenshot({ path: join(output, "library-light.png") }); await page.evaluate(() => document.documentElement.classList.remove("theme-light"));
-  await page.getByRole("button", { name: /合成影像/ }).click(); await page.getByRole("heading", { name: "重命名虚构影院" }).first().waitFor();
-  await page.getByRole("button", { name: "普通视频", exact: true }).click(); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  await page.getByRole("button", { name: /合成影像/ }).click(); await page.waitForFunction(() => document.querySelector('video')?.currentTime > 0.2);
+  await chooseEpisode(page, '普通视频'); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.evaluate(() => { document.querySelector("video").currentTime = 3; }); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 3.2);
   await page.getByLabel("源播放流", { exact: true }).selectOption("1");
   await page.waitForFunction(() => document.querySelector('[aria-label="源播放流"]')?.value === "1" && !document.querySelector('[aria-label="源播放流"]').disabled);
@@ -135,7 +137,7 @@ try {
   await page.getByRole("alert").filter({hasText:"已尝试可用播放流"}).waitFor();
   report.passed.push("A fatal playback failure refreshes once, tries each remaining candidate once, then stops without a retry loop");
   report.passed.push("Search through native HTTP, provider-protected cover, settings reinitialization, detail, progressive decode and seek");
-  await page.getByRole("button", { name: "HLS 清单", exact: true }).click(); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
+  await chooseEpisode(page, 'HLS 清单'); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   assert.equal(await page.getByLabel("源播放线路", { exact: true }).inputValue(), "source-backup");
   await page.screenshot({ path: join(output, "hls-playing.png") }); report.passed.push("Actual HLS playback through rewritten init segment and media fragment");
   await page.getByRole("button", { name: "刷新播放", exact: true }).click(); await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
@@ -150,7 +152,7 @@ try {
     }}});`;
   assert((await dispatch({ action:"import", params:{ code:choiceResolver } })).ok);
   await page.evaluate(() => window.dispatchEvent(new Event("hpp.changed")));
-  await page.getByRole("button", { name:"解析器播放", exact:true }).click();
+  await chooseEpisode(page, '解析器播放');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.getByLabel("解析器播放流", { exact:true }).selectOption("1");
   await page.waitForFunction(() => document.querySelector('[aria-label="解析器播放流"]')?.value === "1" && !document.querySelector('[aria-label="解析器播放流"]').disabled);
@@ -166,7 +168,7 @@ try {
   assert.equal(selectedServers[JSON.stringify(["source","fixture.local"])], "source-backup");
   assert.equal(selectedServers[JSON.stringify(["resolver","fixture.selection-resolver"])], "resolver-backup");
   await page.screenshot({path:join(output,"resolver-playback-options.png")});
-  await page.getByRole("button", {name:"备用流测试",exact:true}).click();
+  await chooseEpisode(page, '备用流测试');
   await page.getByRole("alert").filter({hasText:"当前播放器尚不支持该媒体格式"}).waitFor();
   await page.getByLabel("源播放流",{exact:true}).selectOption("1");
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
@@ -205,10 +207,12 @@ try {
   await page.getByRole("heading", { name: "虚构推荐本地虚构影院" }).waitFor();
   report.passed.push("Home more opens a separate section list, returns to home, and endpoint probe/refresh are user-triggered");
   await page.getByRole("button", { name: /合成影像/ }).click();
+  await chooseEpisode(page, '普通视频');
+  await page.waitForFunction(() => document.querySelector('video')?.currentTime > 0.5);
   await page.getByRole("button", { name: "本地收藏", exact: true }).click();
   await page.getByRole("button", { name: "取消本地收藏", exact: true }).waitFor();
-  await page.getByRole("button", { name: "追更", exact: true }).click();
-  await page.getByRole("button", { name: "普通视频", exact: true }).click();
+  await playerPanel(page, "详情"); await page.getByRole("button", { name: "追更", exact: true }).click();
+  await chooseEpisode(page, '普通视频');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime > 0.5);
   await page.evaluate(() => { const video = document.querySelector("video"); video.currentTime = 2; video.pause(); });
   await page.waitForFunction(() => document.querySelector("video")?.paused);
@@ -216,14 +220,14 @@ try {
   await page.getByRole("heading", { name: "重命名虚构影院", exact: true }).waitFor();
   await page.getByRole("button", { name: "历史", exact: true }).click();
   await page.getByRole("button", { name: "继续观看", exact: true }).click();
-  await page.getByRole("button", { name: "普通视频", exact: true }).click();
+  await chooseEpisode(page, '普通视频');
   await page.waitForFunction(() => document.querySelector("video")?.currentTime >= 2);
   const libraryData = JSON.parse(await readFile(join(data, "library.json"), "utf8"));
   assert(Object.values(libraryData.progress).some(p => p.pluginId === "fixture.local" && p.playlistId === "main" && p.episodeId === "progressive" && p.positionSec >= 2));
   assert(Object.values(libraryData.entries).some(e => e.favorite && e.tracking));
   await rail.getByRole("button", { name: "分类", exact: true }).click();
   await page.getByRole("button", { name: /分类中的虚构短剧/ }).waitFor();
-  await page.getByRole("button", { name: "全部", exact: true }).first().click();
+  await page.locator('.legacy-category-heading').first().click();
   await page.getByLabel("2026", { exact: true }).check();
   await page.getByRole("button", { name: /筛选后的虚构短剧/ }).waitFor();
   await page.getByLabel("分类排序", { exact: true }).selectOption("latest");
@@ -259,7 +263,7 @@ try {
   await page.getByRole("textbox", { name: "搜索所有插件" }).fill("fail");
   await page.locator(".hpp-search").getByRole("button", { name: "搜索", exact: true }).click();
   await page.getByRole("alert").filter({hasText:"虚构源暂时不可用"}).waitFor();
-  await page.getByRole("button", { name: /合成影像.*1 个来源/ }).waitFor();
+  await page.locator(".legacy-search-poster").filter({hasText:"合成影像"}).waitFor();
   await dispatch({action:"remove",params:{id:"fixture.echo"}});
   report.passed.push("Two-source aggregate search merges matching titles, requires explicit provider choice and keeps successful results when another provider fails");
   await rail.getByRole("button", { name: "插件中心", exact: true }).click();
@@ -468,9 +472,9 @@ try {
   await distributed.getByText("已就绪", { exact: true }).waitFor();
   await rail.getByRole("button", { name: "设置", exact: true }).click();
   for (const name of ["启动时自动检查插件更新", "自动安装插件更新"]) {
-    const checkbox = page.getByRole("checkbox", { name, exact: true });
-    if (!await checkbox.isChecked()) await checkbox.click();
-    await page.waitForFunction(label => [...document.querySelectorAll("label")].some(e => e.textContent === label && e.querySelector("input")?.checked && !e.querySelector("input").disabled), name);
+    const toggle = page.getByRole("button", { name, exact: true });
+    if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click();
+    await page.waitForFunction(label => [...document.querySelectorAll('button[aria-pressed]')].some(e => e.getAttribute('aria-label') === label && e.getAttribute('aria-pressed') === 'true' && !e.disabled), name);
   }
   await rail.getByRole("button", { name: "插件中心", exact: true }).click();
   await importTab(page);

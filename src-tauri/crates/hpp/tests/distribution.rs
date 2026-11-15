@@ -14,6 +14,73 @@ use std::{
 };
 
 const SOURCE: &str = include_str!("fixtures/synthetic.js");
+
+struct Documents(HashMap<String, Vec<u8>>);
+impl hghub_hpp::manager::DocumentReader for Documents {
+    fn read(&self, location: &str, limit: usize) -> hghub_hpp::Result<Vec<u8>> {
+        let data = self
+            .0
+            .get(location)
+            .ok_or_else(|| hghub_hpp::PluginError::new("NOT_FOUND", "Document not found"))?;
+        Ok(data.iter().take(limit + 1).copied().collect())
+    }
+}
+
+#[tokio::test]
+async fn opaque_document_import_preserves_origin_and_isolates_invalid_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let uri = "content://documents/primary%3ADownload%2Fplugin.js";
+    let large = "content://documents/oversize.js";
+    let invalid = "content://documents/non-utf8.js";
+    let list = "content://documents/list.json";
+    let manager = PluginManager::open(dir.path().into()).unwrap()
+        .with_document_reader(Arc::new(Documents(HashMap::from([
+            (uri.into(), SOURCE.as_bytes().to_vec()),
+            (large.into(), vec![b' '; 2 * 1024 * 1024 + 1]),
+            (invalid.into(), vec![0xff]),
+            (list.into(), json!({"plugins":[
+                {"id":"fixture.remote","name":"Remote","version":"1.0.0","url":"https://plugins.example/demo.js"},
+                {"id":"fixture.relative","name":"Relative","version":"1.0.0","url":"demo.js"}
+            ]}).to_string().into_bytes()),
+        ]))));
+    let preview = manager
+        .preview_import(vec![uri.into(), large.into(), invalid.into()], "documents")
+        .await
+        .unwrap();
+    assert!(preview.items[0].error.is_none());
+    assert!(preview.items[1]
+        .error
+        .as_ref()
+        .unwrap()
+        .message
+        .contains("2 MiB"));
+    assert!(preview.items[2]
+        .error
+        .as_ref()
+        .unwrap()
+        .message
+        .contains("UTF-8"));
+    let report = manager
+        .apply_import(
+            &preview.token,
+            keys(&preview),
+            false,
+            true,
+            "install-document",
+        )
+        .await
+        .unwrap();
+    let plugin = report.items[0].plugin.as_ref().unwrap();
+    assert_eq!(plugin.source.as_deref(), Some(uri));
+    assert_eq!(plugin.status, "disabled");
+    let preview = manager
+        .preview_import(vec![list.into()], "document-list")
+        .await
+        .unwrap();
+    assert_eq!(preview.items[0].source, "https://plugins.example/demo.js");
+    assert!(preview.items[0].error.is_none());
+    assert_eq!(preview.items[1].error.as_ref().unwrap().code, "UNSUPPORTED");
+}
 fn code(version: &str) -> String {
     SOURCE.replace("version: \"1.0.0\"", &format!("version: \"{version}\""))
 }

@@ -8,6 +8,12 @@ use url::Url;
 const JS_LIMIT: usize = 2 * 1024 * 1024;
 const MANIFEST_LIMIT: usize = 1024 * 1024;
 
+/// A platform adapter for user-selected documents with opaque provider URIs.
+/// Reads must stop at limit + 1 bytes. The core validates size and UTF-8.
+pub trait DocumentReader: Send + Sync {
+    fn read(&self, location: &str, limit: usize) -> Result<Vec<u8>>;
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginOrigin {
@@ -227,6 +233,12 @@ fn resolve_entry(base: &str, reference: &str) -> Result<String> {
     if remote(reference) {
         return Ok(reference.into());
     }
+    if base.starts_with("content://") {
+        return Err(PluginError::new(
+            "UNSUPPORTED",
+            "此文件提供者未授予同目录访问权限；请分别选择插件文件，或使用含 HTTPS 插件地址的列表",
+        ));
+    }
     let base = Url::from_file_path(base).map_err(|_| PluginError::invalid("本地列表路径无效"))?;
     base.join(reference)
         .map_err(|_| PluginError::invalid("本地条目路径无效"))?
@@ -267,6 +279,24 @@ impl PluginManager {
             Ok(Document {
                 text: utf8(bytes)?,
                 final_location: meta["url"].as_str().unwrap_or(location).into(),
+            })
+        } else if location.starts_with("content://") {
+            let reader = self
+                .document_reader
+                .clone()
+                .ok_or_else(|| PluginError::new("UNSUPPORTED", "当前宿主不支持文件提供者地址"))?;
+            let owned = location.to_string();
+            let read = tokio::task::spawn_blocking(move || reader.read(&owned, JS_LIMIT));
+            let bytes = tokio::select! {
+                _ = cancel.cancelled() => return Err(PluginError::cancelled()),
+                result = read => result.map_err(|_| PluginError::internal("读取所选文件失败"))??,
+            };
+            if bytes.len() > JS_LIMIT {
+                return Err(PluginError::invalid("插件文件超过 2 MiB"));
+            }
+            Ok(Document {
+                text: utf8(bytes)?,
+                final_location: location.into(),
             })
         } else {
             use std::io::Read;

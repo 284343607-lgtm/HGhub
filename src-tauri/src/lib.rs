@@ -9,6 +9,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_opener::Builder::new()
                 .open_js_links_on_click(false)
@@ -18,7 +19,10 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             network_policy::bind_security(&dir);
-            let manager = std::sync::Arc::new(hghub_hpp::PluginManager::open(dir.join("hpp"))?);
+            let manager = std::sync::Arc::new(
+                hghub_hpp::PluginManager::open(dir.join("hpp"))?
+                    .with_document_reader(std::sync::Arc::new(plugins::PickedDocuments(app.handle().clone()))),
+            );
             app.manage(manager.clone());
             tauri::async_runtime::spawn(async move {
                 manager.initialize_enabled().await;

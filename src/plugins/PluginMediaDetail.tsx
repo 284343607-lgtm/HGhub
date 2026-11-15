@@ -6,7 +6,7 @@ import { usePluginRequests } from "./usePluginRequests";
 import PluginPlayer from "./PluginPlayer";
 import type { FeedPresentation } from "../components/Feed";
 import { useAssetUrls } from "./MediaCards";
-import type { Episode, MediaDetail, Page } from "./protocol";
+import type { Episode, MediaDetail, MediaItem, Page } from "./protocol";
 import { Notice } from "./BrowsePages";
 import CommentsPanel from "./CommentsPanel";
 import MediaInteractions from "./MediaInteractions";
@@ -21,20 +21,21 @@ export function alignedEpisode(previous: Episode, episodes: Episode[]) {
   const matches = episodes.filter(e => e.episodeNumber === previous.episodeNumber && e.season === previous.season);
   return matches.length === 1 ? matches[0] : undefined;
 }
-export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, active = true, start, onSwitch, presentation = {}, entryEpisodeId }: {
-  plugin: InstalledPlugin; mediaId: string; onBack?: () => void; manage: () => void; active?: boolean; presentation?: FeedPresentation; entryEpisodeId?: string;
+export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, active = true, start, onSwitch, presentation = {}, entryEpisodeId, entryItem }: {
+  plugin: InstalledPlugin; mediaId: string; onBack?: () => void; manage: () => void; active?: boolean; presentation?: FeedPresentation; entryEpisodeId?: string; entryItem?: MediaItem;
   start?: SourceStart; onSwitch: (pluginId: string, mediaId: string, start?: SourceStart) => void;
 }) {
   const host = useHost(), request = usePluginRequests();
   const [detail, setDetail] = useState<MediaDetail | null>(null), [error, setError] = useState("");
+  const [needsDetail, setNeedsDetail] = useState(!entryEpisodeId);
   const [playlist, setPlaylist] = useState(""), [episode, setEpisode] = useState<Episode | null>(null);
   const [media, setMedia] = useState<PreparedMedia | null>(null), [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<PreparedMedia["choices"] | null>(null);
   const [switching, setSwitching] = useState(false), startedFromSource = useRef(false);
   const selection = useRef(initialPlaybackSelection(plugin.meta.id));
   const attempted = useRef(new Set<string>());
-  const sequence = useRef(0), position = useRef(0), refreshed = useRef(false), current = useRef<{ ep: Episode; playlistId: string } | null>(null);
-  const detailRef = useRef(detail), latestHost = useRef(host); detailRef.current = detail; latestHost.current = host;
+  const sequence = useRef(0), position = useRef(0), refreshed = useRef(false), current = useRef<{ ep: Episode; playlistId?: string } | null>(null);
+  const detailRef = useRef<MediaItem | null>(detail || entryItem || null), latestHost = useRef(host); detailRef.current = detail || entryItem || null; latestHost.current = host;
   const session = useRef<PreparedMedia | null>(null), lastSave = useRef(0);
   const entry = host.library.find(e => libraryKey(e.pluginId, e.mediaId) === libraryKey(plugin.meta.id, mediaId));
   const canPlay = plugin.enabled && ["ready", "unloaded"].includes(plugin.status);
@@ -49,14 +50,17 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   };
   const saveRef = useRef(save); saveRef.current = save;
   useEffect(() => {
+    if (!needsDetail) return;
     void request<MediaDetail>("call", { id: plugin.meta.id, method: "media.getDetail", args: { id: mediaId } }).then(d => {
       setDetail(d); setPlaylist(d.playlists[0]?.id || "");
       if (entry?.tracking) void host.put(plugin.meta.id, d).catch(e => setError(pluginError(e)));
     }).catch(e => setError(pluginError(e)));
-    return () => { sequence.current++; if (session.current) releaseMedia(session.current.sessionId); void saveRef.current().catch(() => {}); };
-  }, [plugin.meta.id, mediaId, request]);
+  }, [plugin.meta.id, mediaId, request, needsDetail]);
+  useEffect(() => () => { autoStarted.current=false; startedFromSource.current=false; sequence.current++; if (session.current) releaseMedia(session.current.sessionId); void saveRef.current().catch(() => {}); }, [plugin.meta.id, mediaId]);
   useEffect(() => {
     if (!active || !canPlay) {
+      autoStarted.current = false;
+      startedFromSource.current = false;
       progress.pause();
       sequence.current++; request.cancelAll();
       if (session.current) releaseMedia(session.current.sessionId);
@@ -64,7 +68,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
       void saveRef.current().catch(e => setError(pluginError(e)));
     }
   }, [active, canPlay]);
-  const play = async (ep: Episode, reason: "play" | "refresh" | "switch" | "fallback" = "play", listId = playlist, chosen = selection.current, proposedPosition?: number) => {
+  const play = async (ep: Episode, reason: "play" | "refresh" | "switch" | "fallback" = "play", listId: string | undefined = playlist || undefined, chosen = selection.current, proposedPosition?: number) => {
     const n = ++sequence.current;
     setBusy(true); setError("");
     if (reason !== "refresh") { await save().catch(() => {}); request.cancelAll(); }
@@ -123,8 +127,10 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   }, [start, !!detail, active, canPlay]);
   const autoStarted = useRef(false);
   useEffect(() => {
-    if (!detail || start || !active || !canPlay || autoStarted.current) return;
+    if ((!detail && !entryEpisodeId) || start || !active || !canPlay || autoStarted.current) return;
     autoStarted.current = true;
+    if (entryEpisodeId) { void play({ id: entryEpisodeId, index: 1 }, "play", undefined); return; }
+    if (!detail) return;
     let live = true;
     void (async () => {
       const resume = entry?.lastProgress;
@@ -183,7 +189,8 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     else { setEpisode(null); if (old) setError("无法唯一对齐季集编号，请重新选集。"); }
   };
   const resume = entry?.lastProgress;
-  const poster = useAssetUrls(plugin.meta.id, detail?.cover ? [detail.cover] : [])[0];
+  const cover = detail?.cover || entryItem?.cover;
+  const poster = useAssetUrls(plugin.meta.id, cover ? [cover] : [])[0];
   const nextEpisode = currentList?.episodes[(currentList?.episodes.findIndex(e=>e.id===episode?.id) ?? -1)+1];
   const refresh = () => { const c=current.current; if(c){refreshed.current=false;attempted.current.clear();void play(c.ep,"refresh",c.playlistId);} };
   const episodesPanel = <><div className="hpp-playlists">{detail?.playlists.map(p=><button key={p.id} aria-pressed={p.id===playlist} className={p.id===playlist?"selected":""} disabled={busy} onClick={()=>chooseList(p.id)}>{p.label||p.id}</button>)}</div>
@@ -201,10 +208,11 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     {active&&<MediaInteractions plugin={plugin} detail={detail}/>}<button onClick={manage}>管理此插件</button></>:<p>{error||"正在读取作品…"}</p>;
   return <div className="legacy-media-page">
     <PluginPlayer {...presentation} media={active&&canPlay?media:null} active={active} position={position.current} error={error} onRetry={refresh}
+      onPanelChange={panel=>{if(panel==='detail'||panel==='episodes')setNeedsDetail(true);}}
       title={detail?.title||presentation.title} author={detail?.author?.name||plugin.meta.name} description={detail?.description} score={detail?.score} poster={poster}
       episodeLabel={episode?.label||String(episode?.episodeNumber??episode?.index??1)} episodeCount={detail?.episodeCount||currentList?.episodes.length}
       social={detail&&active?<MediaInteractions compact plugin={plugin} detail={detail}/>:undefined}
-      onBack={onBack} favorite={!!entry?.favorite} onFavorite={detail?()=>void host.put(plugin.meta.id,detail,{favorite:!entry?.favorite}).catch(e=>setError(pluginError(e))):undefined}
+      onBack={onBack} favorite={!!entry?.favorite} onFavorite={detail||entryItem?()=>void host.put(plugin.meta.id,(detail||entryItem)!,{favorite:!entry?.favorite}).catch(e=>setError(pluginError(e))):undefined}
       onNextEpisode={nextEpisode&&!nextEpisode.locked?()=>void play(nextEpisode):undefined}
       panels={{detail:detailPanel,episodes:episodesPanel,playback:playbackPanel,comments:plugin.methods.includes("comments.list")?<CommentsPanel embedded plugin={plugin} mediaId={mediaId} episodeId={current.current?.ep.id}/>:undefined}}
       onPosition={(t,duration)=>{position.current=t;progress.update(t,duration);if(Date.now()-lastSave.current>5000){lastSave.current=Date.now();void save().catch(e=>setError(pluginError(e)));}}}
