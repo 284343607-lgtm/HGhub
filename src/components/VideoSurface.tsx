@@ -40,7 +40,7 @@ export default forwardRef<VideoHandle, Props>(function VideoSurface(props, forwa
       else latest.current.onError();
     });
   };
-  const pause=()=>{wantsPlay.current=false;playAttempt.current++;const v=ref.current;if(!v)return;if(v.paused)latest.current.onPause();else v.pause();};
+  const pause=()=>{wantsPlay.current=false;playAttempt.current++;const v=ref.current;if(!v)return;const alreadyPaused=v.paused;v.pause();if(alreadyPaused)latest.current.onPause();};
   useImperativeHandle(forwarded,()=>({
     el:()=>ref.current, play, pause,
     toggle:()=>{const v=ref.current;if(v?.paused)play();else pause();},
@@ -80,7 +80,7 @@ export default forwardRef<VideoHandle, Props>(function VideoSurface(props, forwa
       style={{objectFit:props.fit,transform:`translate(${props.panX}px, ${props.panY}px) scale(${props.scale})`,transition:props.isGesturing?"none":"transform .18s ease"}}
       onLoadedMetadata={dimensions} onLoadedData={dimensions} onTimeUpdate={e=>{props.onTime(e.currentTarget.currentTime);buffered(e.currentTarget);}}
       onProgress={e=>buffered(e.currentTarget)}
-      onPlay={()=>{wantsPlay.current=true;props.onWaiting();}}
+      onPlay={()=>{if(!ref.current?.paused){wantsPlay.current=true;props.onWaiting();}}}
       onWaiting={()=>{if(!ref.current?.paused)props.onWaiting();}} onSeeking={()=>{if(!ref.current?.paused)props.onWaiting();}} onSeeked={()=>{const v=ref.current;if(v&&!v.paused&&v.readyState>=3)props.onPlaying();}}
       onEnded={props.onEnded}>
       {props.media.playback.subtitles?.filter(t=>t.format==="vtt").map((t,i)=><track key={t.url} kind="subtitles" src={t.url} label={t.label||t.language||`字幕 ${i+1}`} srcLang={t.language} default={t.default}/>)}

@@ -63,6 +63,7 @@ assert.equal(events.at(-1),'paused','a real autoplay denial must expose the play
 setup();handle.current.play();const pending=video.requests.at(-1);handle.current.pause();
 assert.equal(events.at(-1),'paused');video.fire('seeking');video.fire('seeked');
 assert.equal(events.at(-1),'paused','seeking while explicitly paused must not show buffering');
+video.fire('play');assert.equal(events.at(-1),'paused','a queued play event cannot undo a newer explicit pause');
 const requests=video.requests.length;video.fire('loadedmetadata');assert.equal(video.requests.length,requests,'metadata must not undo an explicit pause');
 pending.reject(new DOMException('pause','AbortError'));await flush();assert.equal(events.at(-1),'paused');cleanup();
 
