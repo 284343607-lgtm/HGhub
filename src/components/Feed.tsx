@@ -10,6 +10,7 @@ import VideoSurface, { type VideoHandle } from "./VideoSurface";
 import PlayerControls from "./PlayerControls";
 import PlaybackLock from "./PlaybackLock";
 import { registerBackHandler } from "../back";
+import { useVerticalSwipe } from './useVerticalSwipe';
 import type { PreparedMedia } from "../plugins/client";
 import { IMore, IHeart, IHeartF, IPip, IBack, IBoltF, IChevR, IChevronDown, IChevronUp, IClose, ICommentF, ICompress, IExpand, IList, ILockF, IPauseF, IPlayF, ISearch, ISettings, IVol, IVolMute } from "../icons";
 
@@ -23,6 +24,7 @@ export interface FeedPresentation {
   onPanelChange?: (panel: PlayerPanel) => void;
   onBack?: () => void; onNext?: () => void; onPrevious?: () => void; onNextEpisode?: () => void; onPreviousEpisode?: () => void;
   queueIndex?: number; total?: number;
+  previousPreview?: { title: string; poster?: string }; nextPreview?: { title: string; poster?: string };
 }
 export interface FeedProps extends FeedPresentation {
   media: PreparedMedia | null; position: number; active?: boolean; error?: string; onRetry?: () => void;
@@ -33,8 +35,9 @@ export interface FeedProps extends FeedPresentation {
  * Plugin adapters own metadata, sessions and persistence; this component owns presentation. */
 export default function Feed({media, position, active=true, error="", onRetry, onPosition, onFailure, onPlaying, onStopped, onEnded,
  title="", author="", description="", score, poster:posterUrl, episodeLabel="", qualityLabel, episodeCount=0, favorite=false, onFavorite,
- playIntent=0, mode="full", onOpenDetail, panels={}, social, onPanelChange, onBack, onNext, onPrevious, onNextEpisode, onPreviousEpisode, queueIndex=0, total=1}: FeedProps) {
+ playIntent=0, mode="full", onOpenDetail, panels={}, social, onPanelChange, onBack, onNext, onPrevious, onNextEpisode, onPreviousEpisode, queueIndex=0, total=1, previousPreview, nextPreview}: FeedProps) {
   const store=useStore(), {muted,setMuted,volume,setVolume}=store;
+  const activeRef = useRef(active); activeRef.current = active;
   const isDesktop=!isMobile, preview=mode==="preview";
   const boxRef=useRef<HTMLDivElement>(null), videoRef=useRef<VideoHandle>(null);
   const lastWheel=useRef(0);
@@ -62,7 +65,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
     else if (resumeAfterOverlay.current) { resumeAfterOverlay.current = false; videoRef.current?.play(); }
   }, [active]);
   useEffect(() => { if (playIntent && active) videoRef.current?.play(); }, [playIntent]);
-  useEffect(() => { setPanel(null); store.setClean(false); wake(); }, [mode]);
+  useEffect(() => { setPanel(null); if (active) store.setClean(false); wake(); }, [mode]);
   /* 续播：拿到时长后再 seek 一次（只对进入时那一条生效） */
   const theater = store.theater;
   const setTheater = store.setTheater;
@@ -114,6 +117,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
   /* 竖屏下横屏视频适应模式 + 双指无级缩放/平移 */
   const [portraitFit, setPortraitFit] = useState<"contain" | "cover">("contain");
   const [zoom, setZoom] = useState({ scale: 1, x: 0, y: 0, gesturing: false });
+  const swipe = useVerticalSwipe(!isDesktop && active && !controlsLocked && !panel && zoom.scale <= 1.05, preview ? onPrevious : onPreviousEpisode, preview ? onNext : onNextEpisode);
   const pinchRef = useRef<{
     dist0: number; midX0: number; midY0: number; scale0: number; x0: number; y0: number;
   } | null>(null);
@@ -200,13 +204,13 @@ export default function Feed({media, position, active=true, error="", onRetry, o
   }, [isDesktop, preview, active, fs, isLandscapeVideo]);
 
 
-  const go=(delta:number)=>{ if(!active || controlsLocked) return; if(preview) delta>0 ? onNext?.() : onPrevious?.(); };
+  const go=(delta:number)=>{ if(!active || controlsLocked || panel) return; if(preview) delta>0 ? onNext?.() : onPrevious?.(); else delta>0 ? onNextEpisode?.() : onPreviousEpisode?.(); };
   const onTimeTick=(t:number)=>{ if(!barScrub.current && gesture.current?.mode!=="scrub")setTime(t); onPosition(t,videoRef.current?.el()?.duration); };
   const onDurationTick=(d:number)=>setDuration(d);
   useEffect(()=>{setTime(position);setDuration(0);setWaiting(!!media);setErr("");setZoom({scale:1,x:0,y:0,gesturing:false});},[playKey]);
-  useEffect(()=>()=>{clearTapTimer();store.setClean(false);store.setFs(false);},[]);
+  useEffect(()=>()=>{clearTapTimer();if(activeRef.current){store.setClean(false);store.setFs(false);}},[]);
   useEffect(()=>{videoRef.current?.rate(effRate);},[effRate,playKey]);
-  useEffect(()=>{if(!panel)return;return registerBackHandler(()=>{setPanel(null);return true;});},[panel]);
+  useEffect(()=>{if(!panel || !active)return;return registerBackHandler(()=>{setPanel(null);return true;},10);},[panel,active]);
   useEffect(()=>{const sync=()=>setFullscreen(!!document.fullscreenElement);document.addEventListener("fullscreenchange",sync);return()=>document.removeEventListener("fullscreenchange",sync);},[]);
   const toggleFull=()=>{const el=boxRef.current?.parentElement?.parentElement;if(document.fullscreenElement)void document.exitFullscreen();else void el?.requestFullscreen().catch(()=>toast("当前环境无法进入全屏"));};
   useEffect(()=>{
@@ -225,7 +229,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
       wake();
     };window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);
   },[active,controlsLocked,panel,time,onNext,onPrevious,fs,preview,onNextEpisode,onPreviousEpisode]);
-  const showDetails = () => { setPanel(null); if (onOpenDetail) onOpenDetail(); else setPanel("detail"); };
+  const showDetails = () => { if (!isDesktop && fs) { setPanel('detail'); return; } setPanel(null); if (onOpenDetail) onOpenDetail(); else setPanel("detail"); };
   const panelContent=panel && <><header className="legacy-panel-heading"><h2>{{detail:"作品详情",episodes:"选集",comments:"评论",playback:"画质与线路",more:"更多播放选项"}[panel]}</h2><button aria-label="关闭面板" onClick={()=>setPanel(null)}><IClose size={18}/></button></header><div className="legacy-panel-body">
     {panel === "more" ? <div className="hg-more-menu">
       <div className="hg-more-shortcuts">
@@ -245,6 +249,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
   </div></>;
   /* —— 双指捏合缩放 & 平移（Pinch-to-Zoom & Pan） —— */
   const cancelSingleGesture = () => {
+    swipe.cancel();
     clearTapTimer();
     const g = gesture.current;
     if (g?.timer) window.clearTimeout(g.timer);
@@ -260,7 +265,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
   };
 
   const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (isDesktop || controlsLocked) return;
+    if (isDesktop || controlsLocked || panel) return;
     if (e.touches.length === 2) {
       cancelSingleGesture();
       const t0 = e.touches[0];
@@ -315,7 +320,8 @@ export default function Feed({media, position, active=true, error="", onRetry, o
 
   /* —— 长按 2x（上滑锁定） / 横拖定位 / 单击清屏 / 双击暂停 —— */
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isDesktop || controlsLocked || !active || !e.isPrimary || pinchRef.current || gesture.current || e.button !== 0) return;
+    if (isDesktop || controlsLocked || !active || panel || swipe.locked.current || !e.isPrimary || pinchRef.current || gesture.current || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('button,a,input,select,textarea,[role=dialog]')) return;
     const el = e.currentTarget;
     const span = el.clientWidth || 1;
     try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
@@ -371,10 +377,12 @@ export default function Feed({media, position, active=true, error="", onRetry, o
         clearTapTimer();
         if (g.timer) window.clearTimeout(g.timer);
         g.mode = "pan";
+        swipe.move(dy, boxRef.current?.clientHeight || window.innerHeight);
       }
       return;
     }
 
+    if (g.mode === 'pan') swipe.move(dy, boxRef.current?.clientHeight || window.innerHeight);
     if (g.mode === "scrub") {
       const total = duration || 0;
       if (!total) return;
@@ -415,9 +423,10 @@ export default function Feed({media, position, active=true, error="", onRetry, o
       return;
     }
 
-    if (!cancelled && g.mode === "pan" && e && !fs && !clean && zoom.scale <= 1.05) {
-      const dy = e.clientY - g.startY;
-      if (Math.abs(dy) > 65) go(dy < 0 ? 1 : -1);
+    if (g.mode === 'pan') {
+      if (!cancelled && e) swipe.finish(e.clientY - g.startY, Date.now() - g.t, boxRef.current?.clientHeight || window.innerHeight);
+      else swipe.cancel();
+      return;
     }
     if (cancelled || g.mode !== "idle") return;
     const moveDist = e ? Math.hypot(e.clientX - g.x, e.clientY - g.y) : 0;
@@ -459,6 +468,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
     const el = boxRef.current;
     if (!el) return undefined;
     const fn = (e: TouchEvent) => {
+      if ((e.target as HTMLElement).closest('[role=dialog]')) return;
       if (holdRef.current || pinchRef.current || fs || e.touches.length >= 2) {
         e.preventDefault();
       }
@@ -525,9 +535,16 @@ export default function Feed({media, position, active=true, error="", onRetry, o
       : (vpLandscape ? "contain" : "cover");
 
   return (
+    <div className="hg-swipe-viewport absolute inset-0 overflow-hidden bg-black">
+      {!isDesktop && swipe.offset !== 0 && [previousPreview, nextPreview].map((item, i) => <div key={i} aria-hidden="true" className="hg-swipe-neighbor" style={{transform:'translate3d(0,' + (swipe.offset + (i ? swipe.height : -swipe.height)) + 'px,0)',transition:swipe.settling?'transform 220ms cubic-bezier(.2,.7,.2,1)':'none'}}>
+        {(item?.poster || posterUrl) && <img src={item?.poster || posterUrl} alt=""/>}<strong>{item?.title || (i ? '加载下一条…' : '上一条')}</strong>
+      </div>)}
     <div
+      style={{touchAction:!isDesktop&&!panel?'none':undefined,transform:swipe.offset ? 'translate3d(0,' + swipe.offset + 'px,0)' : undefined,transition:swipe.settling?'transform 220ms cubic-bezier(.2,.7,.2,1)':'none'}}
       className={`hg-player-ui mode-${mode} absolute inset-0 overflow-hidden bg-black player-root ${controlsLocked ? "is-locked" : ""} ${isDesktop ? "player-surface" : ""} ${theater ? "is-theater" : ""} ${!preview && isDesktop && idle && !paused && !panel ? "is-idle" : ""}`}
-      onPointerMove={() => { if (isDesktop) wake(); }}>
+      onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
+      onPointerDown={onDown} onPointerMove={e => { if (isDesktop) wake(); else onMove(e); }}
+      onPointerUp={e=>onUp(e,false)} onPointerCancel={e=>onUp(e,true)} onLostPointerCapture={e=>onUp(e,true)}>
       <div className="absolute inset-0" inert={controlsLocked}>
       {/* 氛围背景（全屏时隐藏，避免透出封面底图） */}
       {preview && !fs && (
@@ -553,16 +570,7 @@ export default function Feed({media, position, active=true, error="", onRetry, o
                 <div className={!isDesktop && fs ? "fs-immersive" : "absolute inset-0"}>
                   <div
                     className="absolute inset-0 overflow-hidden"
-                    style={{ touchAction: "none" }}
-                    onTouchStart={onTouchStart}
-                    onTouchMove={onTouchMove}
-                    onTouchEnd={onTouchEnd}
-                    onTouchCancel={onTouchEnd}
-                    onPointerDown={onDown}
-                    onPointerMove={onMove}
-                    onPointerUp={(e) => onUp(e, false)}
-                    onPointerCancel={(e) => onUp(e, true)}
-                    onLostPointerCapture={(e) => onUp(e, true)}>
+                    style={{ touchAction: "none" }}>
                     <VideoSurface
                       ref={videoRef}
                       media={media!} position={position}
@@ -657,8 +665,8 @@ export default function Feed({media, position, active=true, error="", onRetry, o
                           className="hg-chip-strong w-9 h-9 rounded-full backdrop-blur-md flex items-center justify-center pressable elev-1">
                           <ILockF size={17} />
                         </button>
-                        <button aria-label="选集" onClick={()=>{exitFs();setPanel("episodes");}} className="hg-chip-strong w-9 h-9 rounded-full flex items-center justify-center"><IList size={18}/></button>
-                        <button aria-label="更多" onClick={()=>{exitFs();setPanel("more");}} className="hg-chip-strong w-9 h-9 rounded-full flex items-center justify-center"><IMore size={18}/></button>
+                        <button aria-label="选集" onClick={()=>setPanel("episodes")} className="hg-chip-strong w-9 h-9 rounded-full flex items-center justify-center"><IList size={18}/></button>
+                        <button aria-label="更多" onClick={()=>setPanel("more")} className="hg-chip-strong w-9 h-9 rounded-full flex items-center justify-center"><IMore size={18}/></button>
                         <button onClick={exitFs} aria-label="退出全屏"
                           className="hg-chip-strong w-9 h-9 rounded-full backdrop-blur-md flex items-center justify-center pressable elev-1">
                           <ICompress size={18} />
@@ -828,10 +836,11 @@ export default function Feed({media, position, active=true, error="", onRetry, o
         />
       )}
 
-      {isDesktop ? <div className={`desktop-dock-panel ${panel ? "is-open" : ""}`}><div className="desktop-dock-inner">{panelContent}</div></div> : <Sheet open={!!panel} onClose={() => setPanel(null)}><div className="flex flex-col" style={{height:"72vh"}}>{panelContent}</div></Sheet>}
+      {isDesktop ? <div className={`desktop-dock-panel ${panel ? "is-open" : ""}`}><div className="desktop-dock-inner">{panelContent}</div></div> : <Sheet open={!!panel && active} z="z-[60]" onClose={() => setPanel(null)}><div role="dialog" aria-modal="true" aria-label="播放面板" className="hg-player-sheet flex flex-col">{panelContent}</div></Sheet>}
       </div>
       {hint&&<div role="status" className="absolute top-1/3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-black/70 text-white text-xs pointer-events-none">{hint}</div>}
       {controlsLocked && <PlaybackLock active={active} onUnlock={() => { setControlsLocked(false); wake(); }} />}
+    </div>
     </div>
   );
 }

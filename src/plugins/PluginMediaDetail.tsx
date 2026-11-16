@@ -19,6 +19,7 @@ import { registerBackHandler } from "../back";
 import { setMobileOrientation } from "../orientation";
 import { isMobile } from "../environment";
 import MediaDetailSheet from "./MediaDetailSheet";
+import { peekMetadata, storeMetadata } from './metadataCache';
 
 /** Only explicit season/episode identities can suggest alignment. Never infer from index. */
 export function alignedEpisode(previous: Episode, episodes: Episode[]) {
@@ -31,8 +32,9 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   start?: SourceStart; onSwitch: (pluginId: string, mediaId: string, start?: SourceStart) => void;
 }) {
   const app = useStore();
-  const host = useHost(), request = usePluginRequests();
-  const [detail, setDetail] = useState<MediaDetail | null>(null), [error, setError] = useState("");
+  const viewActive = useRef(active); viewActive.current = active;
+  const host = useHost(), request = usePluginRequests(), metadataRequest = usePluginRequests();
+  const [detail, setDetail] = useState<MediaDetail | null>(() => peekMetadata<MediaDetail>(plugin, 'media.getDetail', { id: mediaId }) || null), [error, setError] = useState("");
   const homePreview = presentation.mode === "preview";
   const [playIntent, setPlayIntent] = useState(0);
   const [fullPlayback, setFullPlayback] = useState(!!start);
@@ -63,6 +65,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   const sequence = useRef(0), position = useRef(0), refreshed = useRef(false), current = useRef<{ ep: Episode; playlistId?: string } | null>(null);
   const detailRef = useRef<MediaItem | null>(detail || entryItem || null), latestHost = useRef(host); detailRef.current = detail || entryItem || null; latestHost.current = host;
   const session = useRef<PreparedMedia | null>(null), lastSave = useRef(0);
+  const failedWhileHidden = useRef(false);
   const entry = host.library.find(e => libraryKey(e.pluginId, e.mediaId) === libraryKey(plugin.meta.id, mediaId));
   const canPlay = plugin.enabled && ["ready", "unloaded"].includes(plugin.status);
   const progress = useMemo(() => pluginProgressReporter(plugin.meta.id, mediaId, plugin.methods.includes("progress.report")), [plugin.meta.id, mediaId, plugin.revision]);
@@ -75,9 +78,12 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     await latestHost.current.refreshLibrary();
   };
   const saveRef = useRef(save); saveRef.current = save;
+  useEffect(() => { if (detail) storeMetadata(plugin, 'media.getDetail', { id: mediaId }, detail); }, [detail]);
   useEffect(() => {
     if (!needsDetail) return;
-    void request<MediaDetail>("call", { id: plugin.meta.id, method: "media.getDetail", args: { id: mediaId } }).then(d => {
+    let live = true;
+    void metadataRequest.read<MediaDetail>(plugin, 'media.getDetail', { id: mediaId }, detailRound > 0).then(d => {
+      if (!live) return;
       setDetail(d);
       const liveList = d.playlists.find(p => p.episodes.some(ep => ep.id === current.current?.ep.id));
       const chosenList = liveList || d.playlists.find(p => p.id === entry?.lastProgress?.playlistId) || d.playlists[0];
@@ -87,24 +93,29 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
         current.current = { ep: liveEpisode, playlistId: liveList.id }; setEpisode(liveEpisode);
       }
       if (entry?.tracking) void host.put(plugin.meta.id, d).catch(e => setError(pluginError(e)));
-    }).catch(e => setError(pluginError(e)));
-  }, [plugin.meta.id, mediaId, request, needsDetail, detailRound]);
+    }).catch(e => { if (live && e?.code !== 'CANCELLED') setError(pluginError(e)); });
+    return () => { live = false; };
+  }, [plugin.meta.id, plugin.revision, mediaId, metadataRequest, needsDetail, detailRound]);
   useEffect(() => () => { autoStarted.current=false; startedFromSource.current=false; sequence.current++; if (session.current) releaseMedia(session.current.sessionId); void saveRef.current().catch(() => {}); }, [plugin.meta.id, mediaId]);
   useEffect(() => {
     if (!active || !canPlay) {
-      autoStarted.current = false;
-      startedFromSource.current = false;
+      if (!session.current || !canPlay) { autoStarted.current = false; startedFromSource.current = false; }
       progress.pause();
       sequence.current++; request.cancelAll();
-      if (session.current) releaseMedia(session.current.sessionId);
-      session.current = null; setMedia(null);
+      setBusy(false);
+      if (!canPlay) { if (session.current) releaseMedia(session.current.sessionId); session.current = null; setMedia(null); }
       void saveRef.current().catch(e => setError(pluginError(e)));
+    } else if (current.current && playbackRequested && (failedWhileHidden.current || !session.current || (session.current.playback.expiresAt && session.current.playback.expiresAt <= Date.now() + 5000))) {
+      autoStarted.current = true;
+      failedWhileHidden.current = false;
+      void play(current.current.ep, 'refresh', current.current.playlistId);
     }
   }, [active, canPlay]);
   const play = async (ep: Episode, reason: "play" | "refresh" | "switch" | "fallback" = "play", listId: string | undefined = playlist || undefined, chosen = selection.current, proposedPosition?: number) => {
+    if (!viewActive.current || !canPlay) return;
     const n = ++sequence.current;
     setBusy(true); setError("");
-    if (reason !== "refresh") { await save().catch(() => {}); request.cancelAll(); }
+    if (reason !== "refresh") { void save().catch(() => {}); request.cancelAll(); }
     if (n !== sequence.current) return;
     setEpisode(ep);
     if (session.current) releaseMedia(session.current.sessionId);
@@ -144,7 +155,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
       const cursors = new Set<string>();
       while (list && !list.episodes.some(e => e.id === start.episodeId) && list.next && !cursors.has(list.next) && plugin.methods.includes("media.listEpisodes")) {
         cursors.add(list.next);
-        const page = await request<Page<Episode>>("call", { id: plugin.meta.id, method: "media.listEpisodes", args: { mediaId, playlistId: list.id, cursor: list.next, limit: 100 } });
+        const page = await metadataRequest.read<Page<Episode>>(plugin, 'media.listEpisodes', { mediaId, playlistId: list.id, cursor: list.next, limit: 100 });
         if (!live) return;
         const ids = new Set(list.episodes.map(e => e.id));
         list = { ...list, next: page.next, episodes: [...list.episodes, ...page.items.filter(e => { if (ids.has(e.id)) return false; ids.add(e.id); return true; })] };
@@ -173,7 +184,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
       const cursors = new Set<string>();
       while ((!list.episodes.length || (wanted && !list.episodes.some(e => e.id === wanted))) && list.next && !cursors.has(list.next) && plugin.methods.includes("media.listEpisodes")) {
         cursors.add(list.next);
-        const page = await request<Page<Episode>>("call", {id:plugin.meta.id,method:"media.listEpisodes",args:{mediaId,playlistId:list.id,cursor:list.next,limit:100}});
+        const page = await metadataRequest.read<Page<Episode>>(plugin, 'media.listEpisodes', {mediaId,playlistId:list.id,cursor:list.next,limit:100});
         if (!live) return;
         const known = new Set(list.episodes.map(e=>e.id));
         list={...list,next:page.next,episodes:[...list.episodes,...page.items.filter(e=>!known.has(e.id))]};
@@ -192,6 +203,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     const c = current.current; if (c) void play(c.ep, "switch", c.playlistId, { ...selection.current, ...update });
   };
   const failed = () => {
+    if (!active) { failedWhileHidden.current = true; return; }
     const c = current.current; if (!c) return;
     if (!refreshed.current) { refreshed.current = true; void play(c.ep, "refresh", c.playlistId); }
     else {
@@ -211,7 +223,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   const more = async () => {
     if (!currentList?.next) return; setBusy(true);
     try {
-      const result = await request<Page<Episode>>("call", { id: plugin.meta.id, method: "media.listEpisodes", args: { mediaId, playlistId: playlist, cursor: currentList.next, limit: 100 } });
+      const result = await metadataRequest.read<Page<Episode>>(plugin, 'media.listEpisodes', { mediaId, playlistId: playlist, cursor: currentList.next, limit: 100 });
       setDetail(d => d ? { ...d, playlists: d.playlists.map(p => p.id === playlist ? { ...p, episodes: [...p.episodes, ...result.items.filter(e => !p.episodes.some(old => old.id === e.id))], next: result.next } : p) } : d);
     } catch (e) { setError(pluginError(e)); } finally { setBusy(false); }
   };
@@ -226,6 +238,25 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   const poster = useAssetUrls(plugin.meta.id, cover ? [cover] : [])[0];
   const previousEpisode = currentList?.episodes[(currentList?.episodes.findIndex(e=>e.id===episode?.id) ?? 0)-1];
   const nextEpisode = currentList?.episodes[(currentList?.episodes.findIndex(e=>e.id===episode?.id) ?? -1)+1];
+  const advancing = useRef(false);
+  const advanceEpisode = async (direction: number) => {
+    if (busy || advancing.current || !active || !episode || !currentList) return;
+    advancing.current = true;
+    try {
+      let target = direction > 0 ? nextEpisode : previousEpisode;
+      if (!target && direction > 0 && currentList.next && plugin.methods.includes('media.listEpisodes')) {
+        setBusy(true);
+        const result = await metadataRequest.read<Page<Episode>>(plugin, 'media.listEpisodes', { mediaId, playlistId: currentList.id, cursor: currentList.next, limit: 100 });
+        const added = result.items.filter(e => !currentList.episodes.some(old => old.id === e.id));
+        setDetail(d => d && ({ ...d, playlists: d.playlists.map(p => p.id === currentList.id ? { ...p, episodes: [...p.episodes, ...added], next: result.next === currentList.next ? null : result.next } : p) }));
+        target = added[0];
+      }
+      if (!viewActive.current) return;
+      if (target && !target.locked) await play(target);
+      else if (target?.locked) setError(target.lockReason || '该分集暂不可播放');
+    } catch (e) { if ((e as { code?: string }).code !== 'CANCELLED') setError(pluginError(e)); }
+    finally { advancing.current = false; setBusy(false); }
+  };
   const refresh = () => { const c=current.current; if(c){refreshed.current=false;attempted.current.clear();void play(c.ep,"refresh",c.playlistId);} };
   const beginEpisode = (ep: Episode) => {
     setPlayIntent(v=>v+1);
@@ -268,19 +299,21 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
   const favoriteAction = () => { const item = detail || entryItem; if (item) void host.put(plugin.meta.id,item,{favorite:!entry?.favorite}).catch(e=>setError(pluginError(e))); };
   return <div className={`legacy-media-page ${fullPlayback ? "hg-watching" : homePreview ? "hg-discovering" : "hg-detail-entry"}`}>
     {playbackRequested &&
-    <PluginPlayer {...presentation} playIntent={playIntent} mode={fullPlayback ? "full" : "preview"} onOpenDetail={openDetail} media={active&&canPlay?media:null} active={active && !detailOpen} position={position.current} error={error} onRetry={refresh}
+    <PluginPlayer {...presentation} playIntent={playIntent} mode={fullPlayback ? "full" : "preview"} onOpenDetail={openDetail} media={canPlay?media:null} active={active && !detailOpen} position={position.current} error={error} onRetry={refresh}
+      previousPreview={fullPlayback ? previousEpisode ? {title:previousEpisode.label || '上一集',poster} : undefined : presentation.previousPreview}
+      nextPreview={fullPlayback ? nextEpisode ? {title:nextEpisode.label || '下一集',poster} : undefined : presentation.nextPreview}
       onPanelChange={panel=>{if(panel==='detail'||panel==='episodes')setNeedsDetail(true);}}
       title={detail?.title||entryItem?.title||presentation.title} author={detail?.author?.name||plugin.meta.name} description={detail?.description||entryItem?.description} score={detail?.score??entryItem?.score} poster={poster}
       qualityLabel={(choices?.resolver || choices?.source)?.streams.find(s=>s.index===(choices?.resolver || choices?.source)?.streamIndex)?.label}
       episodeLabel={episode?.label||String(episode?.episodeNumber??episode?.index??1)} episodeCount={detail?.episodeCount||entryItem?.episodeCount||currentList?.episodes.length}
       social={detail&&active?<MediaInteractions compact plugin={plugin} detail={detail}/>:undefined}
       onBack={fullPlayback ? leavePlayback : onBack} favorite={!!entry?.favorite} onFavorite={detail||entryItem?()=>void host.put(plugin.meta.id,(detail||entryItem)!,{favorite:!entry?.favorite}).catch(e=>setError(pluginError(e))):undefined}
-      onPreviousEpisode={previousEpisode&&!previousEpisode.locked?()=>void play(previousEpisode):undefined}
-      onNextEpisode={nextEpisode&&!nextEpisode.locked?()=>void play(nextEpisode):undefined}
+      onPreviousEpisode={!busy&&previousEpisode&&!previousEpisode.locked?()=>void advanceEpisode(-1):undefined}
+      onNextEpisode={!busy&&((nextEpisode&&!nextEpisode.locked)||(!nextEpisode&&currentList?.next&&plugin.methods.includes('media.listEpisodes')))?()=>void advanceEpisode(1):undefined}
       panels={{detail:detailPanel,episodes:episodesPanel,playback:playbackPanel,comments:plugin.methods.includes("comments.list")?<CommentsPanel embedded plugin={plugin} mediaId={mediaId} episodeId={current.current?.ep.id}/>:undefined}}
       onPosition={(t,duration)=>{position.current=t;progress.update(t,duration);if(Date.now()-lastSave.current>5000){lastSave.current=Date.now();void save().catch(e=>setError(pluginError(e)));}}}
       onPlaying={progress.playing} onStopped={()=>{progress.pause();void save().catch(e=>setError(pluginError(e)));}}
-      onEnded={()=>{progress.end();void save().catch(()=>{});if(host.prefs.autoNext){if(fullPlayback&&nextEpisode&&!nextEpisode.locked)void play(nextEpisode);else if(!fullPlayback) presentation.onNext?.();}}} onFailure={failed}/>}
+      onEnded={()=>{progress.end();void save().catch(()=>{});if(active&&host.prefs.autoNext){if(fullPlayback)void advanceEpisode(1);else presentation.onNext?.();}}} onFailure={failed}/>}
     {detailOpen && active && <MediaDetailSheet item={detail || entryItem || null} poster={poster} source={plugin.meta.name}
       favorite={!!entry?.favorite} onFavorite={favoriteAction} onClose={()=>{setDetailOpen(false);if(!homePreview&&!fullPlayback)onBack?.();}}
       onPlay={beginPlayback} busy={busy || !canPlay || !detail || (!media && !currentList?.episodes.some(ep=>!ep.locked) && !currentList?.next)}

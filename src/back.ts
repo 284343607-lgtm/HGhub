@@ -2,11 +2,12 @@
 type Handler = () => boolean;
 
 let handler: Handler | null = null;
-const layers: Handler[] = [];
+const layers: { handle: Handler; priority: number }[] = [];
 
-export function registerBackHandler(h: Handler) {
-  layers.push(h);
-  return () => { const i = layers.indexOf(h); if (i >= 0) layers.splice(i, 1); };
+export function registerBackHandler(h: Handler, priority = 0) {
+  const entry = { handle: h, priority };
+  layers.push(entry);
+  return () => { const i = layers.indexOf(entry); if (i >= 0) layers.splice(i, 1); };
 }
 
 export function setBackHandler(h: Handler | null) {
@@ -14,9 +15,10 @@ export function setBackHandler(h: Handler | null) {
 }
 
 /** 返回 true 表示已被消费（不再退栈） */
-export function runBack(): boolean {
+export function runBack(minPriority = -Infinity): boolean {
   try {
-    return layers[layers.length - 1]?.() || (handler ? handler() : false);
+    const top = [...layers].reverse().filter(entry => entry.priority >= minPriority).sort((a, b) => b.priority - a.priority)[0];
+    return top?.handle() || (minPriority <= 0 && handler ? handler() : false);
   } catch {
     return false;
   }
