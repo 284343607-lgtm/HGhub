@@ -22,7 +22,7 @@ export default function ContentPlayer({ plugin, action, contentId, active = true
     try {
       const { serverId, ...options } = chosen;
       const result = await request<PreparedMedia>(action, { id: plugin.meta.id, ...options, args: {
-        ...(action === "live.prepare" ? { channelId: contentId } : action === "article.prepare" ? { articleId: contentId } : { mediaId: contentId, episodeId, playlistId }), serverId, reason, codecs: ["h264"],
+        ...(action === "live.prepare" ? { channelId: contentId } : action === "article.prepare" ? { articleId: contentId } : { mediaId: contentId, episodeId, playlistId }), serverId, reason,
       } });
       if (epoch.current !== n) { releaseMedia(result.sessionId); return; }
       selection.current = rememberPlaybackSelection(result, chosen); session.current = result;

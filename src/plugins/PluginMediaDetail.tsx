@@ -166,7 +166,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
           if (cached) { playbackTiming(cached.sessionId, 'prepared-hit', started); return cached; }
         } else prefetch.clear();
         if (n !== sequence.current) throw { code: 'CANCELLED' };
-        return request<PreparedMedia>("media.prepare", { id: plugin.meta.id, ...options, args: { mediaId, episodeId: ep.id, playlistId: listId, serverId, reason: reason === "refresh" ? "refresh" : "play", codecs: ["h264"] } });
+        return request<PreparedMedia>("media.prepare", { id: plugin.meta.id, ...options, args: { mediaId, episodeId: ep.id, playlistId: listId, serverId, reason: reason === "refresh" ? "refresh" : "play" } });
       };
       const [preparedResult, savedResult] = await Promise.allSettled([
         prepared(),
@@ -306,7 +306,7 @@ export default function PluginMediaDetail({ plugin, mediaId, onBack, manage, act
     const chosen = { ...selection.current, streamIndex: 0, resolverStreamIndex: 0 };
     const { serverId, ...options } = chosen;
     prefetch.offer(preparationKey(nextEpisode, currentList.id, chosen), { id: plugin.meta.id, ...options,
-      args: { mediaId, episodeId: nextEpisode.id, playlistId: currentList.id, serverId, reason: 'preload', codecs: ['h264'] },
+      args: { mediaId, episodeId: nextEpisode.id, playlistId: currentList.id, serverId, reason: 'preload' },
     }, durationRef.current > 0 && durationRef.current - position.current < 60);
   };
   const advancing = useRef(false);

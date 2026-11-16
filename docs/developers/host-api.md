@@ -49,6 +49,8 @@ const encoded = hg.codec.base64Encode(ciphertext);
 
 ## 播放
 
+先读取 `hg.env.media`，播放解析按 `params.codecs` 的顺序选择候选，不根据平台名称猜测 H.264/HEVC/AV1 支持。当前客户端在插件初始化前探测 WebView 的普通视频与 HLS 实际路径；编码列表取启用路径的保守交集，可能为空。能力 API 只用于选择候选，不保证所有 profile、分辨率和音轨组合；应保留可用备用流。没有新增协议特性，DASH 仍不可用。
+
 返回 `streams`，MP4 使用 progressive，HLS 使用 hls。页面流为 kind:page，由解析器处理。图片使用 ImageRef，所有资源走所属插件媒体会话。
 
 备用线路用 servers；按 serverId 只解析当前线路。有效期为 Unix 毫秒；reason:refresh 必须更新地址。不要用 index 猜跨来源同一集，也不要用上游 resumeSec 覆盖宿主本地进度。

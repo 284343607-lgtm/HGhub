@@ -30,7 +30,7 @@ export function createMockHost(options: MockHostOptions = {}) {
   };
   const hg: HostApi = {
     PluginError: MockPluginError,
-    env: { protocol: "1.0.0-dev", app: { name: "HGhub mock", version: "0.0.1" }, plugin: options.plugin || { id: "fixture.mock", version: "1.0.0" }, platform: "windows", locale: "zh-CN", features: [], media: { codecs: ["h264"], formats: ["hls", "progressive"] }, ...options.env },
+    env: { protocol: "1.0.0-dev", app: { name: "HGhub mock", version: "0.0.1" }, plugin: options.plugin || { id: "fixture.mock", version: "1.0.0" }, platform: "windows", locale: "zh-CN", features: [], media: { codecs: [], formats: [] }, ...options.env },
     endpoint: { current: clone(options.endpoint || null), url(path) { if (!options.endpoint) throw new MockPluginError("UNSUPPORTED", "尚无站点线路"); const u = new URL(path, options.endpoint.url); if (!path.startsWith("/") || path.startsWith("//") || u.origin !== new URL(options.endpoint.url).origin) throw new MockPluginError("INVALID_ARGUMENT", "路径必须位于当前 origin"); return u.href; } },
     settings: { get: <T,>(key: string) => clone(options.settings?.[key]) as T | undefined, getAll: () => clone(options.settings || {}) },
     http: { async fetch<T = string>(request: HttpRequest): Promise<HttpResponse<T>> {

@@ -29,6 +29,9 @@ pub async fn dispatch(
         return manager.library.operation(action, p);
     }
     let value = match action.as_str() {
+        "host.media.configure" => json!({"changed": manager.configure_media(
+            serde_json::from_value(p.clone()).map_err(|_| PluginError::invalid("播放能力格式无效"))?
+        ).await?}),
         "proxy.get" => crate::proxy::get(),
         "proxy.set" => crate::proxy::set(text(p, "mode")?, p["url"].as_str().unwrap_or(""))
             .map_err(PluginError::invalid)?,
