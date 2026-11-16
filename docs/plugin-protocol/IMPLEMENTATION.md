@@ -20,7 +20,7 @@
 | 数据桥 | 全量带标签的可传递值；支持 Uint8Array，不与普通对象冲突；深度、字节预算与结果校验 |
 | 持久化 | 插件 ID 隔离的键值存储，二进制、TTL、原子落盘、容量上限；Cookie 独立罐与 domain/path 匹配 |
 | HTTP | DNS/重定向检查，复用应用现有网络策略，取消、请求/响应上限、字符集、限速、Retry-After 冷却；GET/HEAD 重试和有界匿名 GET 响应缓存；按插件、源站及代理/安全策略复用连接池，定期重新验证 DNS |
-| 原生工具 | URL、URLSearchParams、编解码、摘要/HMAC、AES CBC/ECB/CTR/GCM、随机数，原生 HTML/CSS 选择器 |
+| 原生工具 | URL、URLSearchParams、编解码、摘要/HMAC、AES CBC/ECB/CTR/GCM、RSA 公钥加密（SPKI/PKCS#1，PKCS1/OAEP-SHA1/OAEP-SHA256，1024–8192 位）、随机数，原生 HTML/CSS 选择器 |
 | 媒体 | 随机端口 loopback HTTP 服务，progressive 流式代理与真实 Range/HEAD/206/416，HLS 主/子清单及 URI 属性改写 |
 | 资源归属 | 解析器匹配/选择；解析器独立 Cookie、请求头和变换；源与解析器字幕保留各自提供者；同一解析动作共享预算 |
 | 字节变换 | 有界图片/清单/分片/密钥的原生 AES-CBC、plugin transformResource；对输出计算局部范围 |
@@ -84,7 +84,7 @@
 4. **宿主刷新调度**：下载和后台消费者共享的 single-flight 刷新、资源映射原子替换、可恢复错误分类；当前自动刷新由播放页执行。
 5. **媒体预算与缓存**：播放与图片分别限制为 6/2 个传输，当前媒体请求取消推测性预取，下一集已有有限缓存。按主机统一调度、下载队列、跨会话持久缓存、长时间直播及低延迟 HLS 验证仍未完成。
 6. **字节区间变换**：带字节变换的 HLS BYTERANGE 当前明确返回 UNSUPPORTED；不对截断密文直接解密。
-7. **API 与可选功能**：RSA 是协议必需 API，目前缺失，不能归为可选；网页交互、DASH、下载为可选且未实现。静态 hg.env.media 尚未由实际播放路径探测。
+7. **API 与可选功能**：RSA 必需 API 已实现，并通过真实 QuickJS 的两种 PEM/三种填充、随机性、明文/密钥边界与 requires 回归；网页交互、DASH、下载为可选且未实现。静态 hg.env.media 尚未由实际播放路径探测。
 8. **应用功能**：插件自检、数据清理和占用、应用更新。此项目不开发旧平台数据迁移。
 9. **平台验收**：Windows 原生窗口和五端完整媒体回归仍未完成；Android 已定位并修复文档选择器 URI 导入失败，粘贴与文件导入新 APK 实测成功。
 
