@@ -7,6 +7,7 @@ export interface InstalledPlugin {
   origin?: { kind: string; location: string; manifest?: string; manifestName?: string }; canRestore?: boolean;
 }
 export interface PreparedMedia {
+  requestedAt?: number;
   sessionId: string; url: string; format: "hls" | "progressive"; providerId: string;
   playback: Omit<PlaybackInfo, "streams">;
   choices: { source: PlaybackChoices; resolver?: PlaybackChoices; resolverRoute?: ResolverRoute };
