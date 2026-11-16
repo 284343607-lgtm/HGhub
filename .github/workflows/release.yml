@@ -385,11 +385,16 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: HGhub ${{ github.ref_name }}
           body: |
+            ## 初期版本说明
+            HGhub 目前处于初期开发阶段，功能和插件接口仍在完善，使用过程中可能遇到问题，欢迎反馈。
+
+            **iOS、macOS 安装包尚未验证可用性。提供构建产物仅供尝试，不代表已完成安装、启动或播放验证。**
+
             ## 下载说明
             - Windows：安装版 `.exe` 或便携版 `_portable.zip`。
             - Android：根据设备架构选择签名 `.apk`。
-            - macOS：选择 `arm64`、`x64` 或 `universal` 的 `.dmg` / `.app.tar.gz`。
-            - iOS：`_ios.ipa` 为未签名包，需要通过 TrollStore 或自行签名安装。
+            - macOS（可用性未验证）：选择 `arm64`、`x64` 或 `universal` 的 `.dmg` / `.app.tar.gz`。
+            - iOS（可用性未验证）：`_ios.ipa` 为未签名包，需要通过 TrollStore 或自行签名安装。
             - Linux：`.deb` 或 `.AppImage`。
 
             macOS 构建未经过 Apple 开发者证书签名及公证；若系统拦截，请确认来源后执行：
