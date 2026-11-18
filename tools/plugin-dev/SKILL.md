@@ -15,6 +15,8 @@ Preserve upstream media, playlist, episode, category and server IDs. List positi
 
 Check features or method presence for optional behavior. Put indispensable APIs in meta.requires. RSA encryption is implemented in the native host (1024–8192-bit SPKI/PKCS#1 PEM; PKCS1/OAEP-SHA1/OAEP-SHA256); declare crypto.rsaEncrypt in meta.requires when indispensable. The in-memory mock still requires an injected crypto adapter. Do not claim WebView, DASH, download or platform playback support from a type declaration alone.
 
+For WebView login, offer a formless auth method when `hg.env.features.includes("webview")`. Open the view from the user-initiated `auth.submit` and set `doneWhen` for the site’s success URL or cookie names. `hg.webview.open` returns only `finalUrl`. Use a same-origin account endpoint to identify the user and implement `auth.getProfile`. The host manages login cookies per plugin and HTTPS origin. Use `hg.cookies.clear({ url })` on logout. `hg.cookies.get/set` access ordinary cookies.
+
 Use hg.env.media and the supplied playback params.codecs; the client probes its WebView playback paths and reports a conservative codec intersection, which may be empty. Capability API results do not guarantee every profile or device playback. Headless/mock tests must inject media capabilities explicitly.
 
 Map user-facing failures to hg.PluginError; distinguish upstream rejection from changed successful response shapes. Keep logs free of credentials and signed URLs.

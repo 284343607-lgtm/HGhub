@@ -1,6 +1,6 @@
 # 当前支持状态
 
-审计日期：2026-11-15；播放优化、RSA 与能力探测范围更新于 2026-11-16。应用 0.0.1，协议 1.0.0-dev；不构成五端完整合规声明。
+本页记录 `main` 分支对 HPP `1.0.0-dev` 的支持情况。2026-11-18 已更新 Windows 与 Android 的网页登录验收结果。
 
 | 范围 | 当前状态 | 验证边界 |
 | --- | --- | --- |
@@ -20,7 +20,10 @@
 | HTML 内存 | 数量/输入有界 | 尚未合并计入 64 MiB 堆预算 |
 | 自检/日志导出/占用与清理 | 尚缺 | 日志读取可用 |
 | Android 相对列表 | 尚缺 | content URI 兄弟文件需目录授权 |
-| WebView/DASH/下载 | 可选未支持 | 不声明这些特性 |
+| WebView 登录 | Windows、受支持的 Android 已接入 | 用户已在两端验证真实站点登录。Windows 可在登录后点窗口顶部的“关闭”返回插件，Android 模拟器保留数据重装后仍可显示账号昵称。两端另有原生同源隔离测试，认证表单、取消和预算暂停有离线回归覆盖 |
+| DASH/ASS | 可选未支持 | 不声明这些特性 |
 | 跨端/后台 | 未完成 | Windows 浏览器、Android 导入及单部真实 MP4 播放有证据 |
+
+Windows 与 Android 的原生测试均覆盖同源 Cookie 和 localStorage。API 35 / WebView 110 在独立登录进程内使用新数据目录，通过主视图与连续两次登录的隔离测试。客户端按原生能力声明 `webview`。当前适配器要求 Windows WebView2 88 及以上，或 Android 28 及以上并支持 `GET_COOKIE_INFO`。
 
 细节见[实现说明](../plugin-protocol/IMPLEMENTATION.md)。

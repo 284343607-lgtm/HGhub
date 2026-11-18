@@ -11,7 +11,7 @@ function ErrorMessage({ error }: { error: string }) { return error ? <div classN
 export default function Plugins({onBack,focusId}: {onBack:()=>void;focusId?:string}) {
   const host=useHost();
   const plugins=host.plugins.filter(p=>host.prefs.mature||!p.meta.mature);
-  return <div className="hpp-page hpp-plugins-page"><header className="hpp-header"><button aria-label="返回" onClick={onBack}><IBack size={20}/></button><div><h1>插件中心</h1><p>让喜欢的内容，在这里相遇</p></div></header><ErrorMessage error={host.error}/><PluginManagement plugins={plugins} reload={host.reload} focusId={focusId}/></div>;
+  return <div className="hpp-page hpp-plugins-page"><header className="hpp-header"><button aria-label="返回" onClick={onBack}><IBack size={20}/></button><div><h1>插件中心</h1></div></header><ErrorMessage error={host.error}/><PluginManagement plugins={plugins} reload={host.reload} focusId={focusId}/></div>;
 }
 function PluginManagement({ plugins, reload, focusId = "" }: { plugins: InstalledPlugin[]; reload: () => Promise<void>; focusId?: string }) {
   const request = usePluginRequests();
@@ -24,16 +24,16 @@ function PluginManagement({ plugins, reload, focusId = "" }: { plugins: Installe
     <div hidden={tab !== "import"}><PluginDistribution plugins={plugins} reload={reload} /></div>
     <div hidden={tab !== "installed"}>
     <ErrorMessage error={error} />
-    <div className="hpp-section-title"><p className="hpp-muted">管理片源、账号与播放解析器</p><button className="primary" onClick={() => setTab("import")}><IPlus size={15}/>添加插件</button></div>
-    {!plugins.length && <div className="hpp-empty"><ICpu size={40}/><h2>你的插件库，等待第一位成员</h2><p>导入数据源开始观看，或添加解析器拓展播放能力。</p><button className="primary" onClick={() => setTab("import")}>导入插件</button></div>}
+
+    {!plugins.length && <div className="hpp-empty"><ICpu size={40}/><h2>还没有安装插件</h2><p>导入数据源开始观看，或添加解析器拓展播放能力。</p><button className="primary" onClick={() => setTab("import")}>导入插件</button></div>}
     {(["source","resolver"] as const).map(kind => <section className="hpp-plugin-group" key={kind}>{plugins.some(p => (p.meta.kind === "resolver") === (kind === "resolver")) && <h2>{kind === "source" ? "数据源" : "解析器"}<small>{plugins.filter(p => (p.meta.kind === "resolver") === (kind === "resolver")).length}</small></h2>}<div className="hpp-installed">{plugins.filter(p => (p.meta.kind === "resolver") === (kind === "resolver")).map(p => <article className="hpp-plugin" key={p.meta.id}>
-      <div className="hpp-plugin-heading"><span className="hpp-plugin-icon"><IGrid size={22} /></span><div><h3>{p.meta.name}<small>{p.meta.kind === "resolver" ? "解析器" : "数据源"}</small></h3><p>{p.meta.id} · v{p.meta.version}</p></div><span className={`hpp-status ${p.status}`}>{statuses[p.status]}</span></div>
+      <div className="hpp-plugin-heading"><span className="hpp-plugin-icon"><IGrid size={22} /></span><div><h3>{p.meta.name}</h3><p>{p.meta.id} · v{p.meta.version}</p></div><span className={`hpp-status ${p.status}`}>{statuses[p.status]}</span></div>
       {p.meta.description && <p>{p.meta.description}</p>}<ErrorMessage error={p.error?.message || ""} /><p className="hpp-muted">{p.origin?.manifestName && <span>{p.origin.manifestName} · </span>}{p.source || "粘贴代码"}</p>
       <div className="hpp-plugin-footer"><span>{p.methods.length} 项已发现能力{p.endpoint ? ` · ${p.endpoint.label || p.endpoint.id}` : ""}</span><div>
         <button disabled={busy} onClick={() => void perform("enable", { id: p.meta.id, enabled: !p.enabled })}>{p.enabled ? "停用" : "启用"}</button>
         {p.enabled && p.status !== "ready" && <button disabled={busy} onClick={() => void perform("retry", { id: p.meta.id })}>重试初始化</button>}
         {p.canRestore && <button disabled={busy} onClick={() => void perform("restore", { id: p.meta.id })}>恢复上一可用版本</button>}
-        <button onClick={() => setOptions(options === p.meta.id ? null : p.meta.id)}>{options === p.meta.id ? "收起" : "设置与日志"}</button>
+        <button aria-expanded={options === p.meta.id} onClick={() => setOptions(options === p.meta.id ? null : p.meta.id)}>{options === p.meta.id ? "收起" : "设置与日志"}</button>
         <button className="danger" disabled={busy} onClick={() => { if (window.confirm(`移除「${p.meta.name}」及其本地存储与 Cookie？`)) void perform("remove", { id: p.meta.id }); }}>移除</button>
       </div></div>
       {options === p.meta.id && <PluginOptions key={p.meta.id + p.revision} plugin={p} reload={reload} />}

@@ -8,9 +8,13 @@
 | 纯直播 | live.getGroups、live.listChannels、live.resolve | 节目单、图文 |
 | 播放页解析 | resolver.resolve，meta.kind 为 resolver | matches、账号、资源变换 |
 | 图文 | articles.list、articles.getDetail | 当前 source 仍须具备 media 或 live |
-| 登录 | auth 的全部四个方法 | 多步表单；WebView 当前不可用 |
+| 登录 | auth 的全部四个方法 | 多步表单、支持 `webview` 时的网页登录 |
 
 声明命名空间就要实现其必需方法，不要用空函数伪装支持；忽略未知 params 字段。插件只返回数据，不能绘制 UI。需要输入时使用设置或 auth/ui 表单。详见[能力模块](../plugin-protocol/06-capabilities.md)。
+
+当 `hg.env.features.includes("webview")` 为真时，`auth.getMethods` 可返回无 `form` 的网页登录方式。用户点击后，在 `auth.submit` 中调用 `hg.webview.open`，用 `doneWhen` 指定站点登录后的地址或 Cookie 名。若提供两种条件，两者都要满足。窗口完成后只返回 `finalUrl`，插件再用 `hg.http.fetch` 读取同源账号接口，按站点返回的用户 ID 和昵称生成 `UserProfile`。[参数与示例](../plugin-protocol/04-host-api.md#12-hgwebview可选)
+
+宿主按插件和 HTTPS origin 隔离网页登录会话，并处理后续响应的 `Set-Cookie`。`hg.cookies.get/set` 只访问普通 Cookie，页面的 localStorage 留在临时视图中。重新打开账号区时，`auth.getProfile` 可通过同一接口恢复账号显示。登出时在 `finally` 调用 `hg.cookies.clear({ url })` 清理该站点的本地会话。
 
 ## 调用宿主
 

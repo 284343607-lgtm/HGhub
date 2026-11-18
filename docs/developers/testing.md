@@ -39,6 +39,21 @@ pnpm docs:test
 
 假宿主用于字段映射，不能证明隔离、配额、Cookie、媒体代理或原生解码。报告分别记录模拟、真实宿主、上游和设备验证。
 
+## 网页登录
+
+`createMockHost({ webview })` 可注入返回 `{ finalUrl }` 的登录夹具。假宿主会根据该注入设置 `webview` 特性，适合测试登录方式的显隐和站点账号响应。
+
+`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test web_login` 用真实 QuickJS、认证表单 IPC 和模拟登录窗口验证用户动作、超时、取消及预算恢复。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib network::web_login_tests` 检查会话隔离、同源请求、登出和换号。
+
+在支持网页登录的客户端，可按以下步骤验收真实站点。
+
+1. 在插件页打开“设置与日志”，在“插件账号”选择网页登录，确认窗口顶部显示预期站点。
+2. 在站点完成登录。窗口可在满足 `doneWhen` 后自动返回。若 Windows 窗口仍开着，点顶部的“关闭”或标题栏的 ×，宿主会在关窗前核对完成条件。
+3. 回到“插件账号”核对昵称，收起并重新打开“设置与日志”，确认 `auth.getProfile` 仍能从同源接口取回同一账号。
+4. 点“退出登录”，确认账号区重新显示登录方式。再发起一次登录，这次在填写账号前点“关闭”，确认此次操作以 `CANCELLED` 结束。
+
+Windows 与 Android 的实际验收环境见[实现范围](../plugin-protocol/IMPLEMENTATION.md)。
+
 ## 代理与 Android release
 
 设置 → 网络 → 代理访问支持跟随系统、自定义与直连。自定义支持 HTTP、HTTPS、SOCKS；保存后新请求生效，已缓冲的视频不会重新下载，必要时刷新播放。测试连接只使用当前草稿，不保存。直连关闭应用层代理，但不会绕过操作系统 VPN / TUN。

@@ -213,13 +213,14 @@ pub async fn dispatch(
             args.insert(key.into(), json!(text(target, "id")?));
             args.insert("values".into(), p["values"].clone());
             manager
-                .call(
+                .call_scoped(
                     text(p, "id")?,
                     method,
-                    Value::Object(args),
+                    crate::wire::Transfer::from_json(Value::Object(args)),
                     text(p, "requestId")?.into(),
+                    method == "auth.submit",
                 )
-                .await?
+                .await?.json()
         }
         "call" => {
             manager

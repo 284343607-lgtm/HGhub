@@ -68,6 +68,7 @@ pub struct PluginManager {
     media_capabilities: Mutex<crate::capabilities::MediaCapabilities>,
     root: PathBuf,
     document_reader: Option<Arc<dyn DocumentReader>>,
+    web_login: Option<Arc<dyn crate::web_login::WebLoginProvider>>,
     plugins: tokio::sync::RwLock<BTreeMap<String, Arc<tokio::sync::Mutex<Installed>>>>,
     mutation: tokio::sync::Mutex<()>,
     strict: Option<bool>,
@@ -126,6 +127,7 @@ impl PluginManager {
             media_capabilities: Default::default(),
             root,
             document_reader: None,
+            web_login: None,
             plugins: tokio::sync::RwLock::new(plugins),
             mutation: tokio::sync::Mutex::new(()),
             strict,
@@ -137,6 +139,10 @@ impl PluginManager {
             sessions: Default::default(),
             library,
         })
+    }
+    pub fn with_web_login(mut self, provider: Arc<dyn crate::web_login::WebLoginProvider>) -> Self {
+        self.web_login = Some(provider);
+        self
     }
     pub fn with_document_reader(mut self, reader: Arc<dyn DocumentReader>) -> Self {
         self.document_reader = Some(reader);
@@ -236,9 +242,11 @@ impl PluginManager {
         }
         Value::Object(v)
     }
-    fn requirements(meta: &Meta) -> Result<()> {
+    fn requirements(&self, meta: &Meta) -> Result<()> {
         for r in &meta.requires {
             let supported = match r.r#type.as_str() {
+                "feature" if r.name == "webview" => self.web_login.is_some(),
+                "api" if r.name == "webview.open" => self.web_login.is_some(),
                 "feature" => r.name == "charset.legacy",
                 "api" => [
                     "http.fetch",
@@ -306,7 +314,7 @@ impl PluginManager {
             self.sessions.release_plugin(&p.entry.meta.id);
             p.revision = uuid::Uuid::new_v4().to_string();
         }
-        Self::requirements(&p.entry.meta)?;
+        self.requirements(&p.entry.meta)?;
         if let Some(w) = p.worker.take() {
             w.stop();
         }
@@ -321,6 +329,7 @@ impl PluginManager {
                 p.network.clone(),
                 p.logs.clone(),
                 self.media_capabilities.lock().unwrap().clone(),
+                self.web_login.clone(),
             )
         };
         let mut w = spawn(p.entry.endpoint.clone()).await?;
@@ -668,8 +677,18 @@ impl PluginManager {
         &self,
         id: &str,
         method: &str,
+        params: Transfer,
+        request_id: String,
+    ) -> Result<Transfer> {
+        self.call_scoped(id, method, params, request_id, false).await
+    }
+    pub(crate) async fn call_scoped(
+        &self,
+        id: &str,
+        method: &str,
         mut params: Transfer,
         request_id: String,
+        user_auth: bool,
     ) -> Result<Transfer> {
         if request_id.is_empty() || request_id.len() > 128 {
             return Err(PluginError::invalid("requestId 无效"));
@@ -695,11 +714,12 @@ impl PluginManager {
             (w, p.entry.meta.clone(), p.logs.clone())
         };
         let result = w
-            .call(
+            .call_scoped(
                 request_id.clone(),
                 method.into(),
                 params,
                 meta.budget(method),
+                user_auth && method == "auth.submit",
             )
             .await
             .map_err(|mut e| {
