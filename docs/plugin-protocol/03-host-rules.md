@@ -32,7 +32,7 @@
 | --- | --- |
 | 协议 | 只允许 `https:`；`http:` 仅当插件声明 `allowInsecureHttp` |
 | 地址形式 | 不允许含用户名密码的地址；不允许控制字符 |
-| 内网防护 | 默认拒绝解析到回环、私网、链路本地、保留地址的目标，以及 `localhost`、`.local`、`.internal` 等主机名；代理软件的 FakeIP 网段 198.18.0.0/15 放行 |
+| 内网防护 | 默认拒绝解析到回环、私网、链路本地、保留地址的目标，以及 `localhost`、`.local`、`.internal` 等主机名；代理软件的 FakeIP 网段 198.18.0.0/15 放行。若同组 DNS 答案包含允许的 IPv4 与受限 IPv6，忽略受限 IPv6，只固定到允许的地址；没有允许的地址或混入受限 IPv4 时仍拒绝 |
 | DNS | 通过检查的解析结果直接用于连接（DNS 固定），不在检查后重新解析 |
 | 重定向 | 至多 5 跳，每跳重新检查；禁止 HTTPS → HTTP 降级 |
 | 请求头 | 丢弃 `Host`、`Content-Length`、`Connection`、`Transfer-Encoding`、`Accept-Encoding` 等由传输层决定的头 |

@@ -19,7 +19,7 @@
 | 生命周期 | Promise/await 上下文归属、调用取消、遗漏 signal 的 HTTP 取消、定时器清理、空闲卸载、连续故障停止及显式重试 |
 | 数据桥 | 全量带标签的可传递值；支持 Uint8Array，不与普通对象冲突；深度、字节预算与结果校验 |
 | 持久化 | 插件 ID 隔离的键值存储，二进制、TTL、原子落盘、容量上限；Cookie 独立罐与 domain/path 匹配 |
-| HTTP | DNS/重定向检查，复用应用现有网络策略，取消、请求/响应上限、字符集、限速、Retry-After 冷却；GET/HEAD 重试和有界匿名 GET 响应缓存；按插件、源站及代理/安全策略复用连接池，定期重新验证 DNS |
+| HTTP | DNS/重定向检查，复用应用现有网络策略；同组 DNS 有允许的 IPv4 时忽略受限 IPv6，不连接受限地址；取消、请求/响应上限、字符集、限速、Retry-After 冷却；GET/HEAD 重试和有界匿名 GET 响应缓存；按插件、源站及代理/安全策略复用连接池，定期重新验证 DNS |
 | 原生工具 | URL、URLSearchParams、编解码、摘要/HMAC、AES CBC/ECB/CTR/GCM、RSA 公钥加密（SPKI/PKCS#1，PKCS1/OAEP-SHA1/OAEP-SHA256，1024–8192 位）、随机数，原生 HTML/CSS 选择器 |
 | 媒体 | 随机端口 loopback HTTP 服务，progressive 流式代理与真实 Range/HEAD/206/416，HLS 主/子清单及 URI 属性改写 |
 | 资源归属 | 解析器匹配/选择；解析器独立 Cookie、请求头和变换；源与解析器字幕保留各自提供者；同一解析动作共享预算 |
