@@ -25,6 +25,8 @@ Return subtitles with their actual format, language, label, default and resource
 
 Use kind: external only for links handed to the system after user confirmation. HTTP(S), magnet, ed2k, rtsp and rtmp are allowed; app/mime are hints, not executable selection. No host headers, cookies or transformations are forwarded. Preloading never opens another application. Test installed-handler and missing-handler behavior on the device.
 
+For expiring streams, provide expiresAt in Unix milliseconds and return fresh addresses on reason: refresh. The host shares a refresh across consumers of the same session version, reruns the source/resolver chain and commits the complete resource mapping together. Preserve ctx.signal through upstream requests; a cancelled refresh must not continue I/O.
+
 Read references/testing.md and references/distribution.md before delivery. Verify file import, manifest identity/version, selected install, repeat import, detail and playback. Distinguish synthetic tests, real QuickJS, upstream requests and native device playback evidence. Report unverified behavior and retain reproduction steps.
 
 Follow publication constraints. Creating a plugin or manifest does not authorize uploading it. Public examples use fictional or user-controlled services.

@@ -22,10 +22,10 @@ export default function ContentPlayer({ plugin, action, contentId, active = true
     const previous = session.current;
     try {
       const { serverId, ...options } = chosen;
-      const result = await request<PreparedMedia>(action, { id: plugin.meta.id, ...options, args: {
+      const result = reason === 'refresh' && previous ? await request<PreparedMedia>('media.refresh', { sessionId: previous.sessionId, version: previous.version }) : await request<PreparedMedia>(action, { id: plugin.meta.id, ...options, args: {
         ...(action === "live.prepare" ? { channelId: contentId } : action === "article.prepare" ? { articleId: contentId } : { mediaId: contentId, episodeId, playlistId }), serverId, reason,
       } });
-      if (epoch.current !== n) { releaseMedia(result.sessionId); return; }
+      if (epoch.current !== n) { if (result.sessionId !== previous?.sessionId) releaseMedia(result.sessionId); return; }
       selection.current = rememberPlaybackSelection(result, chosen); session.current = result;
       setMedia(result); setChoices(result.choices);
       if (previous && previous.sessionId !== result.sessionId) releaseMedia(previous.sessionId);
@@ -49,7 +49,7 @@ export default function ContentPlayer({ plugin, action, contentId, active = true
   const change = (update: Partial<PlaybackSelection>) => { refreshed.current = false; void prepare("play", { ...selection.current, ...update }); };
   return <section aria-label={action === "live.prepare" ? "直播播放器" : action === "article.prepare" ? "图文视频播放器" : "信息流播放器"}>
     {active && !busy && choices?.external && <ExternalPlayback key={choices.external.url} target={choices.external}/>}
-    <Notice error={error}/><div className="hpp-player-box legacy-inline-player">{media && active ? <PluginPlayer media={media} preparing={busy} active={!busy} position={action === "live.prepare" ? 0 : position.current} onPosition={(t, duration) => { if (media.sessionId !== session.current?.sessionId) return; position.current = t; onPosition?.(t, duration); }} onPlaying={onPlaying} onStopped={onStopped} onEnded={onEnded} onFailure={() => {
+    <Notice error={error}/><div className="hpp-player-box legacy-inline-player">{media && active ? <PluginPlayer media={media} preparing={busy} active={!busy} position={action === "live.prepare" ? 0 : position.current} onPosition={(t, duration) => { if (media.sessionId !== session.current?.sessionId || media.version !== session.current?.version) return; position.current = t; onPosition?.(t, duration); }} onPlaying={onPlaying} onStopped={onStopped} onEnded={onEnded} onFailure={() => {
       if (busy) return;
       if (!refreshed.current) { refreshed.current = true; void prepare("refresh"); }
       else setError("播放失败，请切换播放流或手动重试。");

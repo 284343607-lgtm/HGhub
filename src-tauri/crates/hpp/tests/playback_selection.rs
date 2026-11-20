@@ -144,6 +144,16 @@ async fn source_and_resolver_choices_route_to_their_own_stage_without_exposing_r
     assert_eq!(defaults.len(), 1);
     assert_eq!(defaults[0]["label"], "Resolver");
     assert_eq!(prepared["playback"]["expiresAt"], 8000000000000u64);
+    let refreshed = manager
+        .refresh_media(
+            prepared["sessionId"].as_str().unwrap(),
+            0,
+            "refresh-selected-resolver".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(refreshed.version, 1);
+    assert_eq!(refreshed.choices, prepared["choices"]);
     let visible = prepared.to_string();
     for hidden in [
         "secret",

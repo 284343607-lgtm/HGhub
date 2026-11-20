@@ -759,6 +759,7 @@ impl PluginManager {
             .map(|v| v.json())
     }
     pub async fn cancel(&self, request_id: &str) {
+        self.sessions.cancel_refresh_waiter(request_id);
         self.distribution.cancel(request_id);
         let list = self
             .plugins

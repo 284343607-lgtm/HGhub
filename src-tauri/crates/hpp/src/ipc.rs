@@ -265,6 +265,7 @@ pub async fn dispatch(
                 )
                 .await?
         ),
+        "media.refresh" => json!(manager.refresh_media(text(p, "sessionId")?, p["version"].as_u64().ok_or_else(|| PluginError::invalid("缺少媒体版本"))?, text(p, "requestId")?.into()).await?),
         "media.preload" => {
             manager
                 .preload_media(
@@ -291,6 +292,7 @@ pub async fn dispatch(
                 p["playing"]
                     .as_bool()
                     .ok_or_else(|| PluginError::invalid("缺少 playing"))?,
+                p["version"].as_u64(),
             )?;
             Value::Null
         }
