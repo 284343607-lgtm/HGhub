@@ -29,7 +29,7 @@
 | 设置 | hg.settings | 保存后宿主重建插件 |
 | 日志 | hg.log、console | 本地日志，不写密码、Cookie、签名 URL |
 
-工厂只构造对象并读取设置，不做网络、存储、Cookie 或 HTML 操作。方法接收 `(params, ctx)`；读取一般 15 秒，播放一般 20 秒。将 ctx.signal 传给 HTTP。调用结束后任务清理，没有自由后台执行。
+工厂只构造对象并读取设置，不做网络、存储、Cookie 或 HTML 操作，也不能创建定时器。可以返回 Promise；从执行工厂开始到完成能力发现共用 5 秒预算，单段同步执行最多 1 秒。await 和微任务不会重置总预算，永不完成的 Promise 以 TIMEOUT 加载失败。方法接收 `(params, ctx)`；读取一般 15 秒，播放一般 20 秒。将 ctx.signal 传给 HTTP。调用结束后任务清理，没有自由后台执行。
 
 同一插件并发发出的匿名 GET 由宿主按实际 URL（含 query）和有效请求头合并；不需要启用 `cache`。默认 `credentials: "include"` 但没有匹配 Cookie 时也可合并；带 Cookie 或 Authorization 的请求独立发送。每次调用保持自己的超时与 signal；一个调用取消不影响其他等待者，全部退出后停止上游请求。不同响应体上限、重定向模式或 Cookie 策略保持独立。重试、响应缓存和在途合并是不同机制，不要把某次调用的 signal 绑定到跨调用共享的 Promise；让宿主负责网络合并和取消。
 

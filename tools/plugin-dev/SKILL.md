@@ -9,7 +9,7 @@ Read references/status.md first: the public protocol is a design contract while 
 
 Use the site and output directory from the user's request. Inspect actual pages and requests before selecting capabilities. Keep site URLs, transformations and credentials inside the plugin, not the host. Never embed observed user session credentials in distributed source.
 
-Deliver one self-contained UTF-8 ES module with meta and a default factory. Only declare capabilities the site supports. Use hg.http for APIs, resource objects for images/media and hg.storage for state needed after runtime reload. Factories construct objects and read settings without I/O.
+Deliver one self-contained UTF-8 ES module with meta and a default factory. Only declare capabilities the site supports. Use hg.http for APIs, resource objects for images/media and hg.storage for state needed after runtime reload. Factories construct objects and read settings without I/O or timers. A Promise factory has a total five-second budget; each synchronous slice is limited to one second. Await and microtasks do not reset the total budget, and an unresolved Promise fails with TIMEOUT.
 
 Preserve upstream media, playlist, episode, category and server IDs. List position is not identity. Encode pagination state in returned cursors, not closure state. Respect ctx cancellation and do not schedule background work.
 

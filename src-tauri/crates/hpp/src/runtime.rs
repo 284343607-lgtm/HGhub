@@ -36,6 +36,8 @@ struct Engine {
     outgoing: Rc<RefCell<Vec<Value>>>,
     finished: Rc<RefCell<Vec<(String, String)>>>,
     slice: Rc<RefCell<Instant>>,
+    initialization_deadline: Rc<RefCell<Option<Instant>>>,
+    shutdown: Arc<AtomicBool>,
     owner: Rc<RefCell<String>>,
     interrupted: Arc<AtomicBool>,
 }
@@ -49,15 +51,21 @@ impl Engine {
         let outgoing = Rc::new(RefCell::new(Vec::new()));
         let finished = Rc::new(RefCell::new(Vec::new()));
         let slice = Rc::new(RefCell::new(Instant::now()));
+        let initialization_deadline = Rc::new(RefCell::new(None::<Instant>));
         let owner = Rc::new(RefCell::new(String::new()));
         let interrupted = Arc::new(AtomicBool::new(false));
         {
             let slice = slice.clone();
+            let initialization_deadline = initialization_deadline.clone();
+            let shutdown = shutdown.clone();
             let owner = owner.clone();
             let interrupted = interrupted.clone();
             runtime.set_interrupt_handler(Some(Box::new(move || {
                 let stop = shutdown.load(Ordering::Relaxed)
                     || slice.borrow().elapsed() > Duration::from_secs(1)
+                    || initialization_deadline
+                        .borrow()
+                        .is_some_and(|deadline| Instant::now() >= deadline)
                     || tokens
                         .lock()
                         .unwrap()
@@ -142,11 +150,16 @@ impl Engine {
             outgoing,
             finished,
             slice,
+            initialization_deadline,
+            shutdown,
             owner,
             interrupted,
         })
     }
     fn error(&self, e: rquickjs::Error) -> PluginError {
+        if self.shutdown.load(Ordering::Relaxed) {
+            return PluginError::cancelled();
+        }
         if self.interrupted.load(Ordering::Relaxed) {
             return PluginError::timeout();
         }
@@ -203,9 +216,12 @@ impl Engine {
         media: &crate::capabilities::MediaCapabilities,
         web_login: bool,
     ) -> Result<Vec<String>> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        *self.initialization_deadline.borrow_mut() = Some(deadline);
         *self.slice.borrow_mut() = Instant::now();
-        self.context
-            .with(|ctx| -> rquickjs::Result<String> {
+        let result = (|| {
+            let promise = self.context
+            .with(|ctx| -> rquickjs::Result<Persistent<rquickjs::Promise<'static>>> {
                 let api = self.api.clone().restore(&ctx)?;
                 let install: Function = api.get("install")?;
                 let factory = self
@@ -219,12 +235,46 @@ impl Engine {
                     json!({"meta":meta,"settings":settings,"endpoint":endpoint,"media":media,"webLogin":web_login})
                         .to_string(),
                 ))?;
-                p.finish()
+                Ok(Persistent::save(&ctx, p))
             })
-            .map_err(|e| self.error(e))
-            .and_then(|s| {
-                serde_json::from_str(&s).map_err(|_| PluginError::internal("能力发现失败"))
-            })
+            .map_err(|e| self.error(e))?;
+            loop {
+                if self.shutdown.load(Ordering::Relaxed) {
+                    return Err(PluginError::cancelled());
+                }
+                if self.interrupted.load(Ordering::Relaxed) || Instant::now() >= deadline {
+                    return Err(PluginError::timeout());
+                }
+                let value = self
+                    .context
+                    .with(|ctx| -> rquickjs::Result<Option<String>> {
+                        promise
+                            .clone()
+                            .restore(&ctx)?
+                            .result::<String>()
+                            .transpose()
+                    })
+                    .map_err(|e| self.error(e))?;
+                if let Some(value) = value {
+                    return serde_json::from_str(&value)
+                        .map_err(|_| PluginError::internal("能力发现失败"));
+                }
+                self.pump().map_err(|error| {
+                    if self.shutdown.load(Ordering::Relaxed) {
+                        PluginError::cancelled()
+                    } else {
+                        error
+                    }
+                })?;
+                if !self.runtime.is_job_pending() {
+                    // Factory I/O and timers are forbidden. A still-pending pure
+                    // Promise waits for its deadline without spinning the thread.
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        })();
+        *self.initialization_deadline.borrow_mut() = None;
+        result
     }
     fn invoke(
         &self,
@@ -262,6 +312,9 @@ impl Engine {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod initialization_tests;
 impl Drop for Engine {
     fn drop(&mut self) {
         // Release the hook's persistent JS reference before the runtime is dropped.
@@ -327,6 +380,15 @@ impl Worker {
         let (ready_tx, ready_rx) = oneshot::channel();
         let tokens: Tokens = Default::default();
         let shutdown = Arc::new(AtomicBool::new(false));
+        struct StopInitialization(Option<Arc<AtomicBool>>);
+        impl Drop for StopInitialization {
+            fn drop(&mut self) {
+                if let Some(stop) = &self.0 {
+                    stop.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+        let mut initialization = StopInitialization(Some(shutdown.clone()));
         let token_map = tokens.clone();
         let stop = shutdown.clone();
         let fault = Arc::new(Mutex::new(None));
@@ -664,6 +726,7 @@ impl Worker {
         let methods = ready_rx
             .await
             .map_err(|_| PluginError::internal("插件初始化线程退出"))??;
+        initialization.0.take();
         Ok(Self {
             sender,
             tokens,
