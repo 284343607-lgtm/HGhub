@@ -197,9 +197,21 @@ impl PluginManager {
         if session.expires_at.is_some_and(|t| t <= now() + 5000) {
             return Err(PluginError::cancelled());
         }
-        session.cache.cancel();
         let cancel = session.cancel.child_token();
-        *session.cache.cancel.lock().unwrap() = Some(cancel.clone());
+        let _transfer = {
+            // Register under the same lock as foreground cancellation. A newly
+            // arriving warmup cannot slip past a queued or streaming play request.
+            let _sessions = self.sessions.sessions.lock().unwrap();
+            if self.sessions.foreground.load(Ordering::Acquire) > 0 {
+                return Ok(json!({"bytes":0}));
+            }
+            let Ok(permit) = MEDIA_TRANSFERS.clone().try_acquire_owned() else {
+                return Ok(json!({"bytes":0}));
+            };
+            session.cache.cancel();
+            *session.cache.cancel.lock().unwrap() = Some(cancel.clone());
+            permit
+        };
         let work = async {
             let root = session
                 .resources

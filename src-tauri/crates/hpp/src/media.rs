@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, Weak,
     },
     time::Duration,
@@ -40,8 +40,15 @@ pub struct MediaSessions {
     base: tokio::sync::OnceCell<String>,
     shutdown: CancellationToken,
     preload_gate: tokio::sync::Mutex<()>,
+    foreground: Arc<AtomicUsize>,
     refreshing: Mutex<HashMap<String, tokio::sync::watch::Sender<Option<Result<PreparedMedia>>>>>,
     refresh_waiters: Mutex<HashMap<String, CancellationToken>>,
+}
+struct Foreground(Arc<AtomicUsize>);
+impl Drop for Foreground {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 struct Session {
     version: u64,
@@ -787,14 +794,16 @@ async fn serve_resource(
             .get(index)
             .cloned()
             .ok_or_else(|| PluginError::new("NOT_FOUND", "媒体资源不存在"))?;
-        let gate = if resource.kind == "image" {
-            &*IMAGE_TRANSFERS
+        let (gate, foreground) = if resource.kind == "image" {
+            (&*IMAGE_TRANSFERS, None)
         } else {
             // Foreground media can interrupt speculative I/O, not just jump a queue.
-            for candidate in manager.sessions.sessions.lock().unwrap().values() {
+            let sessions = manager.sessions.sessions.lock().unwrap();
+            manager.sessions.foreground.fetch_add(1, Ordering::AcqRel);
+            for candidate in sessions.values() {
                 candidate.cache.cancel();
             }
-            &*MEDIA_TRANSFERS
+            (&*MEDIA_TRANSFERS, Some(Foreground(manager.sessions.foreground.clone())))
         };
         let permit = tokio::select! {
             _ = session.cancel.cancelled() => return Err(PluginError::cancelled()),
@@ -804,7 +813,7 @@ async fn serve_resource(
         let (parts, body) = response.into_parts();
         // Keep the permit for the streamed body, not only until response headers.
         let stream = body.into_data_stream().map(move |chunk| {
-            let _keep = &permit;
+            let _keep = (&permit, &foreground);
             chunk
         });
         Ok(Response::from_parts(parts, Body::from_stream(stream)))
@@ -875,6 +884,7 @@ async fn proxy_upstream(
             None,
             true,
             true,
+            network::Queue::Media,
             &session.cancel,
         ),
     )

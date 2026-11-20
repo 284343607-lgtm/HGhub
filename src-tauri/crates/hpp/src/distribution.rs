@@ -263,7 +263,7 @@ impl PluginManager {
             return Err(PluginError::cancelled());
         }
         if remote(location) {
-            let network = self.distribution_network()?;
+            let network = Arc::new(self.distribution_network()?);
             let response = network.fetch(Transfer::from_json(json!({"url":location,"responseType":"bytes","credentials":"omit","maxBytes":JS_LIMIT,"retry":0})), cancel.clone()).await?;
             let meta = response.json();
             if meta["ok"] != true {

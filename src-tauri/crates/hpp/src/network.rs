@@ -14,11 +14,14 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 use url::Url;
+
+mod api;
+pub use api::Queue;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +64,9 @@ pub struct Network {
     pub strict_override: Option<bool>,
     jar: Mutex<CookieJars>,
     jar_path: PathBuf,
-    gate: tokio::sync::Semaphore,
+    gate: Arc<tokio::sync::Semaphore>,
+    hosts: Mutex<HashMap<String, Weak<tokio::sync::Semaphore>>>,
+    inflight: Mutex<HashMap<String, Arc<api::Flight>>>,
     rate: Mutex<(f64, Instant)>,
     cache: Mutex<HashMap<String, CachedResponse>>,
     clients: tokio::sync::Mutex<HashMap<String, (Instant, reqwest::Client)>>,
@@ -107,7 +112,9 @@ impl Network {
             strict_override: strict,
             jar: Mutex::new(jar),
             jar_path,
-            gate: tokio::sync::Semaphore::new(6),
+            gate: Arc::new(tokio::sync::Semaphore::new(6)),
+            hosts: Default::default(),
+            inflight: Default::default(),
             rate: Mutex::new((15.0, Instant::now())),
             cache: Mutex::new(HashMap::new()),
             clients: Default::default(),
@@ -442,82 +449,40 @@ impl Network {
         body: Option<Vec<u8>>,
         cookies: bool,
         follow: bool,
+        queue: Queue,
         cancel: &CancellationToken,
     ) -> Result<Response> {
         let mut target = self.target(raw)?;
         let initial = target.origin();
         let mut explicit = headers;
         for hop in 0..=5 {
-            if cancel.is_cancelled() {
-                return Err(PluginError::cancelled());
-            }
-            let host = target.host_str().unwrap().to_string();
-            if let Some(until) = self.cooldown.lock().unwrap().get(&host).copied() {
-                if until > Instant::now() {
-                    let mut e = PluginError::new("RATE_LIMITED", "该主机正在冷却");
-                    e.retry_after_sec = Some(until.duration_since(Instant::now()).as_secs().max(1));
-                    return Err(e);
-                }
-            }
-            let client = self.client(&target, cancel).await?;
             if target.origin() != initial {
                 explicit.remove("authorization");
                 explicit.remove("cookie");
             }
-            let mut h = explicit.clone();
-            let (generation, header) =
-                self.request_cookies(&target, cookies && !h.contains_key("cookie"));
-            if !header.is_empty() {
-                h.insert(
-                    "cookie",
-                    HeaderValue::from_str(&header)
-                        .map_err(|_| PluginError::invalid("Cookie 无效"))?,
-                );
+            let outgoing = self.outgoing(
+                target.clone(),
+                method.clone(),
+                explicit.clone(),
+                body.clone(),
+                cookies,
+            )?;
+            let response = self.send(outgoing, queue, cancel).await?;
+            if let Some(next) =
+                self.redirect(&target, response.status(), response.headers(), follow, hop)?
+            {
+                target = next;
+            } else {
+                return Ok(response);
             }
-            let mut req = client.request(method.clone(), target.clone()).headers(h);
-            if let Some(b) = &body {
-                req = req.body(b.clone());
-            }
-            let mut resp = tokio::select! {_=cancel.cancelled()=>return Err(PluginError::cancelled()),v=req.send()=>v.map_err(|e|PluginError::new("NETWORK",crate::proxy::connection_error(&e)))?};
-            if self.receive_cookies(&target, resp.headers_mut(), generation.as_deref(), cookies)? {
-                resp.extensions_mut().insert(RedactedSetCookie);
-            }
-            if matches!(resp.status().as_u16(), 429 | 503) {
-                if let Some(sec) = resp
-                    .headers()
-                    .get("retry-after")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                {
-                    self.cooldown
-                        .lock()
-                        .unwrap()
-                        .insert(host, Instant::now() + Duration::from_secs(sec.min(600)));
-                }
-            }
-            if follow && matches!(resp.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
-                if hop == 5 {
-                    return Err(PluginError::new("NETWORK", "重定向次数超过上限"));
-                }
-                let loc = resp
-                    .headers()
-                    .get("location")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or_else(|| PluginError::new("NETWORK", "重定向缺少 Location"))?;
-                let next = target
-                    .join(loc)
-                    .map_err(|_| PluginError::new("NETWORK", "重定向地址无效"))?;
-                if target.scheme() == "https" && next.scheme() != "https" {
-                    return Err(PluginError::new("NETWORK", "禁止 HTTPS 降级"));
-                }
-                target = self.target(next.as_str())?;
-                continue;
-            }
-            return Ok(resp);
         }
-        Err(PluginError::new("NETWORK", "重定向失败"))
+        unreachable!("redirect rejects a sixth hop")
     }
-    pub async fn fetch(&self, p: Transfer, cancel: CancellationToken) -> Result<Transfer> {
+    pub async fn fetch(
+        self: &Arc<Self>,
+        p: Transfer,
+        cancel: CancellationToken,
+    ) -> Result<Transfer> {
         let v = p.json();
         let effective = headers(&v["headers"])?;
         let method = v["method"].as_str().unwrap_or("GET");
@@ -645,11 +610,12 @@ impl Network {
             return result.map(|(value, _)| value);
         }
     }
-    async fn fetch_once(&self, p: Transfer, cancel: CancellationToken) -> Result<(Transfer, bool)> {
+    async fn fetch_once(
+        self: &Arc<Self>,
+        p: Transfer,
+        cancel: CancellationToken,
+    ) -> Result<(Transfer, bool)> {
         let v = p.json();
-        let wait = self.gate.acquire();
-        let _permit = tokio::select! {_=cancel.cancelled()=>return Err(PluginError::cancelled()),v=wait=>v.map_err(|_|PluginError::internal("网络队列已关闭"))?};
-        self.rate_limit(&cancel).await?;
         let timeout =
             Duration::from_millis(v["timeoutMs"].as_u64().unwrap_or(15000).clamp(1, 30000));
         let work = async {
@@ -713,29 +679,30 @@ impl Network {
                 }
             }
             let follow = body.is_none() && v["redirect"] != "manual";
-            let mut resp = self
-                .request(
-                    u.as_str(),
+            let max = v["maxBytes"]
+                .as_u64()
+                .unwrap_or(2 * 1024 * 1024)
+                .clamp(1, 8 * 1024 * 1024) as usize;
+            let resp = self
+                .buffered(
+                    u,
                     method,
                     headers,
                     body,
                     v["credentials"] != "omit",
                     follow,
+                    max,
                     &cancel,
                 )
                 .await?;
-            let max = v["maxBytes"]
-                .as_u64()
-                .unwrap_or(2 * 1024 * 1024)
-                .clamp(1, 8 * 1024 * 1024) as usize;
-            let mut meta = json!({"status":resp.status().as_u16(),"ok":resp.status().is_success(),"url":resp.url().as_str(),"headers":{},"setCookies":[],"fromCache":false});
-            for (k, v) in resp.headers() {
+            let mut meta = json!({"status":resp.status.as_u16(),"ok":resp.status.is_success(),"url":resp.url.as_str(),"headers":{},"setCookies":[],"fromCache":false});
+            for (k, v) in &resp.headers {
                 if let Ok(s) = v.to_str() {
                     meta["headers"][k.as_str()] = json!(s);
                 }
             }
             meta["setCookies"] = json!(resp
-                .headers()
+                .headers
                 .get_all("set-cookie")
                 .iter()
                 .filter_map(|v| v.to_str().ok())
@@ -753,20 +720,12 @@ impl Network {
                     })
                 })
                 .unwrap_or_else(|| "utf-8".into());
-            let mut bytes = vec![];
-            while let Some(chunk) = tokio::select! {_=cancel.cancelled()=>return Err(PluginError::cancelled()),v=resp.chunk()=>v.map_err(|_|PluginError::new("NETWORK","响应读取失败"))?}
-            {
-                if bytes.len() + chunk.len() > max {
-                    return Err(PluginError::new("UPSTREAM_ERROR", "响应体超过 maxBytes"));
-                }
-                bytes.extend_from_slice(&chunk);
-            }
             let data = if v["responseType"] == "bytes" {
-                Transfer::Bytes(bytes)
+                Transfer::Bytes(resp.bytes.clone())
             } else {
                 let enc = encoding_rs::Encoding::for_label(charset.as_bytes())
                     .ok_or_else(|| PluginError::invalid("不支持该字符集"))?;
-                let (text, _, _) = enc.decode(&bytes);
+                let (text, _, _) = enc.decode(&resp.bytes);
                 if v["responseType"] == "json" {
                     Transfer::from_json(serde_json::from_str(&text).map_err(|_| {
                         let mut error = PluginError::new("UPSTREAM_CHANGED", "响应不是合法 JSON");
@@ -782,10 +741,7 @@ impl Network {
                 m.insert("data".into(), data);
             }
             result.validate(8 * 1024 * 1024)?;
-            Ok((
-                result,
-                resp.extensions().get::<RedactedSetCookie>().is_some(),
-            ))
+            Ok((result, resp.redacted))
         };
         tokio::select! {_=cancel.cancelled()=>Err(PluginError::cancelled()),v=tokio::time::timeout(timeout,work)=>v.unwrap_or_else(|_|Err(PluginError::timeout()))}
     }
@@ -828,5 +784,7 @@ pub fn headers(v: &Value) -> Result<HeaderMap> {
     Ok(out)
 }
 
+#[cfg(test)]
+mod scheduling_tests;
 #[cfg(test)]
 mod web_login_tests;

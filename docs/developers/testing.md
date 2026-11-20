@@ -20,6 +20,8 @@
 
 ## 仓库验证
 
+网络调度专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib network::scheduling_tests` 使用真实 HTTP 慢响应检查匿名 GET 合并、实际 query/有效头、独立取消和超时、认证请求隔离、每主机 4/每插件 6 的响应体并发限制，以及媒体独立队列与共享冷却。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test media_scheduling --test playback_performance` 检查前台播放打断预取、排队/传输期间跳过新预取、结束后恢复预取，以及 MP4/HLS 缓存复用。
+
 共享刷新专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test transport shared_refresh` 检查同版本并发只解析一次、单个与全部等待者取消、释放会话、失败保留旧映射及重试、旧 HLS 子资源失效和新版本寻址。`node scripts/test-playback-state.mjs` 检查同一会话换版本会重载视频并恢复当前秒数，旧播放请求不能覆盖新状态；`node scripts/test-next-episode.mjs` 检查连播准备的复用与取消。均不替代设备上的播放连续性验收。
 
 外部流专项包含在 `tests/playback_selection.rs`：六种允许协议、正常/预加载/刷新均只返回确认信息、不创建活跃媒体会话、不泄露头和 Cookie；拒绝脚本/文件/data 地址及 URL 内账号密码，插件不能伪造宿主确认目标。设备另验确认、取消、处理程序缺失、外部打开后返回应用；编译或宿主测试不等于系统启动验收。
