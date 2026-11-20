@@ -25,20 +25,22 @@ function SourcePosters({ pluginId, posters, name, open }: { pluginId: string; po
       </div>
       <div className="px-1 pb-2 pt-1.5">
         <div className="text-[13px] font-semibold text-on leading-snug clamp-2">{v.title}</div>
+        {(v.year || v.tags?.length) && <p className="search-result-meta">{[v.year, ...(v.tags || []).slice(0, 3)].filter(Boolean).join(" · ")}</p>}
         <div className="flex items-center justify-between gap-1 mt-1">
           <span className="text-[11px] text-mut truncate">{v.author?.name || name}{sources > 1 ? ` · ${sources} 个来源` : ""}</span>
           {v.stats?.likes !== undefined && <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-mut"><IHeartF size={10}/>{count(v.stats.likes)}</span>}
         </div>
+        <div className="search-result-badges"><span>{name}{sources>1?` · ${sources} 个来源`:""}</span>{badge&&<span>{badge}</span>}</div>
       </div>
     </button>;
   })}</>;
 }
 
-export default function SearchPosters({ groups, names, open }: { groups: SearchHit[][]; names: Record<string, string>; open: (group: SearchHit[]) => void }) {
+export default function SearchPosters({ groups, names, open, viewMode = "grid" }: { viewMode?: "grid" | "detail"; groups: SearchHit[][]; names: Record<string, string>; open: (group: SearchHit[]) => void }) {
   const batches = new Map<string, Poster[]>();
   groups.forEach((group, index) => {
     const hit = group.find(h => h.item.cover) || group[0];
     batches.set(hit.pluginId, [...batches.get(hit.pluginId) || [], { hit, group, index }]);
   });
-  return <div className="legacy-search-grid">{[...batches].map(([pluginId, posters]) => <SourcePosters key={pluginId} pluginId={pluginId} posters={posters} name={names[pluginId]} open={open}/>)}</div>;
+  return <div className={`legacy-search-grid refined-results-${viewMode}`}>{[...batches].map(([pluginId, posters]) => <SourcePosters key={pluginId} pluginId={pluginId} posters={posters} name={names[pluginId]} open={open}/>)}</div>;
 }
