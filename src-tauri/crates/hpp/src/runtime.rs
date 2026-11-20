@@ -183,37 +183,89 @@ impl Engine {
         })
     }
     fn inspect(&self, source: &str) -> Result<Meta> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        *self.initialization_deadline.borrow_mut() = Some(deadline);
         *self.slice.borrow_mut() = Instant::now();
-        self.context
-            .with(|ctx| -> rquickjs::Result<Value> {
-                let (module, promise) = Module::declare(ctx.clone(), "plugin", source)?.eval()?;
-                promise.finish::<()>()?;
-                let ns = module.namespace()?;
-                let keys = ns.keys::<String>().collect::<rquickjs::Result<Vec<_>>>()?;
-                if keys.len() != 2
-                    || !keys.iter().any(|k| k == "meta")
-                    || !keys.iter().any(|k| k == "default")
-                {
-                    return Err(rquickjs::Error::new_from_js_message(
-                        "module",
-                        "HPP",
-                        "只允许 meta 与 default 两个导出",
-                    ));
+        let result = (|| {
+            let (namespace, promise) = self
+                .context
+                .with(|ctx| -> rquickjs::Result<_> {
+                    let (module, promise) =
+                        Module::declare(ctx.clone(), "plugin", source)?.eval()?;
+                    Ok((
+                        Persistent::save(&ctx, module.namespace()?),
+                        Persistent::save(&ctx, promise),
+                    ))
+                })
+                .map_err(|e| self.error(e))?;
+            self.wait_initialization::<()>(promise, deadline)?;
+            *self.slice.borrow_mut() = Instant::now();
+            let raw = self
+                .context
+                .with(|ctx| -> rquickjs::Result<Value> {
+                    let ns = namespace.restore(&ctx)?;
+                    let keys = ns.keys::<String>().collect::<rquickjs::Result<Vec<_>>>()?;
+                    if keys.len() != 2
+                        || !keys.iter().any(|k| k == "meta")
+                        || !keys.iter().any(|k| k == "default")
+                    {
+                        return Err(rquickjs::Error::new_from_js_message(
+                            "module",
+                            "HPP",
+                            "只允许 meta 与 default 两个导出",
+                        ));
+                    }
+                    let factory: Function = ns.get("default")?;
+                    let meta: JsValue = ns.get("meta")?;
+                    let raw = ctx
+                        .json_stringify(meta)?
+                        .ok_or(rquickjs::Error::Unknown)?
+                        .to_string()?;
+                    *self.factory.borrow_mut() = Some(Persistent::save(&ctx, factory));
+                    Ok(serde_json::from_str(&raw).unwrap_or(Value::Null))
+                })
+                .map_err(|e| self.error(e))?;
+            let meta = Meta::parse(raw)?;
+            if Instant::now() >= deadline {
+                return Err(PluginError::timeout());
+            }
+            Ok(meta)
+        })();
+        *self.initialization_deadline.borrow_mut() = None;
+        result
+    }
+    fn wait_initialization<T: for<'js> rquickjs::FromJs<'js>>(
+        &self,
+        promise: Persistent<rquickjs::Promise<'static>>,
+        deadline: Instant,
+    ) -> Result<T> {
+        loop {
+            if self.shutdown.load(Ordering::Relaxed) {
+                return Err(PluginError::cancelled());
+            }
+            if self.interrupted.load(Ordering::Relaxed) || Instant::now() >= deadline {
+                return Err(PluginError::timeout());
+            }
+            let value = self
+                .context
+                .with(|ctx| promise.clone().restore(&ctx)?.result::<T>().transpose())
+                .map_err(|e| self.error(e))?;
+            if let Some(value) = value {
+                return Ok(value);
+            }
+            self.pump().map_err(|error| {
+                if self.shutdown.load(Ordering::Relaxed) {
+                    PluginError::cancelled()
+                } else {
+                    error
                 }
-                let _: Function = module.get("default")?;
-                let meta: JsValue = module.get("meta")?;
-                let raw = ctx
-                    .json_stringify(meta)?
-                    .ok_or(rquickjs::Error::Unknown)?
-                    .to_string()?;
-                *self.factory.borrow_mut() = Some(Persistent::save(
-                    &ctx,
-                    module.get::<_, Function>("default")?,
-                ));
-                Ok(serde_json::from_str(&raw).unwrap_or(Value::Null))
-            })
-            .map_err(|e| self.error(e))
-            .and_then(Meta::parse)
+            })?;
+            if !self.runtime.is_job_pending() {
+                // Initialization cannot perform I/O or use timers. Pending pure
+                // Promises wait for the deadline without spinning the thread.
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
     }
     fn install(
         &self,
@@ -245,40 +297,8 @@ impl Engine {
                 Ok(Persistent::save(&ctx, p))
             })
             .map_err(|e| self.error(e))?;
-            loop {
-                if self.shutdown.load(Ordering::Relaxed) {
-                    return Err(PluginError::cancelled());
-                }
-                if self.interrupted.load(Ordering::Relaxed) || Instant::now() >= deadline {
-                    return Err(PluginError::timeout());
-                }
-                let value = self
-                    .context
-                    .with(|ctx| -> rquickjs::Result<Option<String>> {
-                        promise
-                            .clone()
-                            .restore(&ctx)?
-                            .result::<String>()
-                            .transpose()
-                    })
-                    .map_err(|e| self.error(e))?;
-                if let Some(value) = value {
-                    return serde_json::from_str(&value)
-                        .map_err(|_| PluginError::internal("能力发现失败"));
-                }
-                self.pump().map_err(|error| {
-                    if self.shutdown.load(Ordering::Relaxed) {
-                        PluginError::cancelled()
-                    } else {
-                        error
-                    }
-                })?;
-                if !self.runtime.is_job_pending() {
-                    // Factory I/O and timers are forbidden. A still-pending pure
-                    // Promise waits for its deadline without spinning the thread.
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-            }
+            let value = self.wait_initialization::<String>(promise, deadline)?;
+            serde_json::from_str(&value).map_err(|_| PluginError::internal("能力发现失败"))
         })();
         *self.initialization_deadline.borrow_mut() = None;
         self.initialized.set(result.is_ok());

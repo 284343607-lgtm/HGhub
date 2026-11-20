@@ -26,6 +26,8 @@
 
 初始化专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test runtime_initialization` 检查挂起 Promise 和持续微任务均受 5 秒总预算限制、多个短同步片段可累计超过 1 秒、同步死循环被中断，以及工厂不可调用 HTTP/存储/Cookie/HTML/定时器。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib runtime::initialization_tests` 检查取消初始化后线程释放资源。
 
+模块顶层专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test module_initialization` 检查顶层 await 挂起、持续微任务、同步死循环和多个短片段的时间边界，并检查预览及仅安装不运行工厂。模块求值与元信息检查共用 5 秒；启用时工厂另有 5 秒预算。
+
 网络调度专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib network::scheduling_tests` 使用真实 HTTP 慢响应检查匿名 GET 合并、实际 query/有效头、独立取消和超时、认证请求隔离、每主机 4/每插件 6 的响应体并发限制，以及媒体独立队列与共享冷却。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test media_scheduling --test playback_performance` 检查前台播放打断预取、排队/传输期间跳过新预取、结束后恢复预取，以及 MP4/HLS 缓存复用。
 
 共享刷新专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test transport shared_refresh` 检查同版本并发只解析一次、单个与全部等待者取消、释放会话、失败保留旧映射及重试、旧 HLS 子资源失效和新版本寻址。`node scripts/test-playback-state.mjs` 检查同一会话换版本会重载视频并恢复当前秒数，旧播放请求不能覆盖新状态；`node scripts/test-next-episode.mjs` 检查连播准备的复用与取消。均不替代设备上的播放连续性验收。
