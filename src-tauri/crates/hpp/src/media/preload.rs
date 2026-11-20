@@ -405,7 +405,7 @@ impl PluginManager {
 // Parse only rewritten local references; no upstream URL or credential crosses IPC.
 // Unsupported byte-range playlists are left to normal playback rather than warmed incorrectly.
 fn plan(text: &str, position: f64) -> (Vec<usize>, Vec<(usize, Option<String>)>) {
-    let id = |raw: &str| raw.trim().rsplit('/').next()?.parse::<usize>().ok();
+    let id = |raw: &str| raw.trim().split('?').next()?.rsplit('/').next()?.parse::<usize>().ok();
     let uri = regex::Regex::new(r#"URI="([^"]*)""#).unwrap();
     let attr = |line: &str| uri.captures(line).and_then(|c| id(&c[1]));
     let mut playlists = vec![];
