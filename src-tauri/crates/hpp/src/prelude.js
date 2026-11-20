@@ -198,6 +198,7 @@
     },
     deliver(id,response){const p=pending.get(id);if(!p)return;pending.delete(id);p.cleanup();if(!scopes.has(p.owner))return;const before=current;current=p.owner;try{p.resolve(unwrap(response));}catch(e){p.reject(e);}finally{current=before;}},
     cancel(id){const s=scopes.get(id);if(s){s.controller.abort();clean(id);}},
+    dispose(){for(const id of [...scopes.keys()])clean(id);current=null;if(typeof plugin?.dispose==="function")plugin.dispose();},
     pack,unpack
   };
   function configEnv(meta,media,webLogin){return {protocol:"1.0.0-dev",app:{name:"HGhub",version:"0.0.1"},plugin:{id:meta.id,version:meta.version},platform:sync("env",{}).platform,locale:"zh-CN",features:webLogin?["charset.legacy","webview"]:["charset.legacy"],media};}

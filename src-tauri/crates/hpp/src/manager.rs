@@ -777,7 +777,7 @@ impl PluginManager {
     pub async fn logs(&self, id: &str) -> Result<Vec<Value>> {
         let p = self.get(id).await?;
         let p = p.lock().await;
-        let logs = p.logs.lock().unwrap().iter().cloned().collect();
+        let logs = p.logs.lock().unwrap().snapshot();
         Ok(logs)
     }
     pub async fn settings_get(&self, id: &str) -> Result<Value> {

@@ -39,6 +39,12 @@ API 默认每插件并发 6、同主机最多 4，读取响应体期间仍占许
 
 业务数据允许普通对象、数组、有限数字、字符串、布尔、null、Uint8Array。对象 undefined 属性丢弃；数组不能有 undefined/空位。不得返回 Date、Map、类实例、函数或环。总值最多 8 MiB、深度 32 层。
 
+## 日志与卸载
+
+插件日志与宿主的校验告警、运行时错误共用每分钟 240 行、最近 2000 行的限额。每行包含 details 的 UTF-8 JSON 最多 2 KiB；过长文本和 details 会截断，读取日志时可见超速丢弃数量。优先记录 requestId、错误码和字段路径，避免整段上游响应。
+
+可选顶层 `dispose()` 仅用于同步释放内存引用或写日志，最多执行 1 秒。此时没有业务调用作用域，不能联网、持久化、读写 Cookie、操作 HTML 或创建定时器，也不会等待返回的 Promise。运行时故障可能跳过通知，持久状态应在正常业务调用中保存。
+
 ## RSA 公钥加密
 
 `hg.crypto.rsaEncrypt` 是同步必需 API，接受 1024–8192 位 SPKI（`PUBLIC KEY`）或 PKCS#1（`RSA PUBLIC KEY`）PEM。必须指定 `pkcs1`、`oaep-sha1` 或 `oaep-sha256`，输入和输出都是 `Uint8Array`；文本先用 `hg.codec.utf8Encode`。

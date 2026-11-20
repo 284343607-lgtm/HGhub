@@ -13,7 +13,7 @@ use rquickjs::{
 };
 use serde_json::{json, Value};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, VecDeque},
     rc::Rc,
     sync::{
@@ -38,6 +38,8 @@ struct Engine {
     slice: Rc<RefCell<Instant>>,
     initialization_deadline: Rc<RefCell<Option<Instant>>>,
     shutdown: Arc<AtomicBool>,
+    initialized: Cell<bool>,
+    disposing: Rc<Cell<bool>>,
     owner: Rc<RefCell<String>>,
     interrupted: Arc<AtomicBool>,
 }
@@ -52,25 +54,28 @@ impl Engine {
         let finished = Rc::new(RefCell::new(Vec::new()));
         let slice = Rc::new(RefCell::new(Instant::now()));
         let initialization_deadline = Rc::new(RefCell::new(None::<Instant>));
+        let disposing = Rc::new(Cell::new(false));
         let owner = Rc::new(RefCell::new(String::new()));
         let interrupted = Arc::new(AtomicBool::new(false));
         {
             let slice = slice.clone();
             let initialization_deadline = initialization_deadline.clone();
             let shutdown = shutdown.clone();
+            let disposing = disposing.clone();
             let owner = owner.clone();
             let interrupted = interrupted.clone();
             runtime.set_interrupt_handler(Some(Box::new(move || {
-                let stop = shutdown.load(Ordering::Relaxed)
-                    || slice.borrow().elapsed() > Duration::from_secs(1)
-                    || initialization_deadline
-                        .borrow()
-                        .is_some_and(|deadline| Instant::now() >= deadline)
-                    || tokens
-                        .lock()
-                        .unwrap()
-                        .get(&*owner.borrow())
-                        .is_some_and(CancellationToken::is_cancelled);
+                let stop = slice.borrow().elapsed() > Duration::from_secs(1)
+                    || !disposing.get()
+                        && (shutdown.load(Ordering::Relaxed)
+                            || initialization_deadline
+                                .borrow()
+                                .is_some_and(|deadline| Instant::now() >= deadline)
+                            || tokens
+                                .lock()
+                                .unwrap()
+                                .get(&*owner.borrow())
+                                .is_some_and(CancellationToken::is_cancelled));
                 if stop {
                     interrupted.store(true, Ordering::Relaxed);
                 }
@@ -152,12 +157,14 @@ impl Engine {
             slice,
             initialization_deadline,
             shutdown,
+            initialized: Cell::new(false),
+            disposing,
             owner,
             interrupted,
         })
     }
     fn error(&self, e: rquickjs::Error) -> PluginError {
-        if self.shutdown.load(Ordering::Relaxed) {
+        if !self.disposing.get() && self.shutdown.load(Ordering::Relaxed) {
             return PluginError::cancelled();
         }
         if self.interrupted.load(Ordering::Relaxed) {
@@ -274,6 +281,7 @@ impl Engine {
             }
         })();
         *self.initialization_deadline.borrow_mut() = None;
+        self.initialized.set(result.is_ok());
         result
     }
     fn invoke(
@@ -297,6 +305,7 @@ impl Engine {
             }
             *self.slice.borrow_mut() = Instant::now();
             self.runtime.execute_pending_job().map_err(|e| {
+                self.initialized.set(false);
                 e.0.with(|ctx| {
                     let ex = ctx.catch();
                     let mut error = if self.interrupted.load(Ordering::Relaxed) {
@@ -315,8 +324,21 @@ impl Engine {
 
 #[cfg(test)]
 mod initialization_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 impl Drop for Engine {
     fn drop(&mut self) {
+        if self.initialized.get() && !self.interrupted.load(Ordering::Relaxed) {
+            self.disposing.set(true);
+            if let Err(error) = self.invoke("dispose", ()) {
+                self.native.borrow().logs.lock().unwrap().push(
+                    "error",
+                    "插件卸载通知失败",
+                    "",
+                    Some(&json!({"code":error.code,"details":error.details})),
+                );
+            }
+        }
         // Release the hook's persistent JS reference before the runtime is dropped.
         self.runtime.set_promise_hook(None);
     }
@@ -549,8 +571,11 @@ impl Worker {
                             let error = PluginError::internal(
                                 "运行时连续故障，已停止；请重试或重新启用插件",
                             );
-                            logs.lock().unwrap().push_back(
-                                json!({"at":now(),"level":"error","text":error.message}),
+                            logs.lock().unwrap().push(
+                                "error",
+                                &error.message,
+                                "",
+                                error.details.as_ref(),
                             );
                             *thread_fault.lock().unwrap() = Some(error);
                             break;
@@ -588,7 +613,12 @@ impl Worker {
                             if result.is_ok() {
                                 failures = 0;
                             } else if let Err(e) = &result {
-                                logs.lock().unwrap().push_back(json!({"at":now(),"level":"error","requestId":id,"text":e.message,"details":e.details}));
+                                logs.lock().unwrap().push(
+                                    "error",
+                                    &e.message,
+                                    &id,
+                                    e.details.as_ref(),
+                                );
                             }
                             let _ = c.reply.send(result);
                         }

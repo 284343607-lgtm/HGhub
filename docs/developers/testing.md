@@ -20,6 +20,8 @@
 
 ## 仓库验证
 
+日志/卸载专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib native::logs` 检查 240 行/分钟、2000 行保留、单行含 details 的 2 KiB 限制与丢弃计数；`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test log_limits` 检查插件日志、校验告警和业务错误共用限额。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib runtime::lifecycle_tests` 检查正常卸载通知、禁止 I/O、抛错/死循环/挂起 Promise 的停用耗时，以及中断运行时跳过通知。
+
 初始化专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test runtime_initialization` 检查挂起 Promise 和持续微任务均受 5 秒总预算限制、多个短同步片段可累计超过 1 秒、同步死循环被中断，以及工厂不可调用 HTTP/存储/Cookie/HTML/定时器。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib runtime::initialization_tests` 检查取消初始化后线程释放资源。
 
 网络调度专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib network::scheduling_tests` 使用真实 HTTP 慢响应检查匿名 GET 合并、实际 query/有效头、独立取消和超时、认证请求隔离、每主机 4/每插件 6 的响应体并发限制，以及媒体独立队列与共享冷却。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test media_scheduling --test playback_performance` 检查前台播放打断预取、排队/传输期间跳过新预取、结束后恢复预取，以及 MP4/HLS 缓存复用。

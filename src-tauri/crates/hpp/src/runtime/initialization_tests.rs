@@ -39,7 +39,7 @@ async fn dropping_initialization_stops_pending_and_running_factory() {
             None,
         ));
         tokio::time::timeout(Duration::from_secs(2), async {
-            while logs.lock().unwrap().is_empty() {
+            while logs.lock().unwrap().snapshot().is_empty() {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })

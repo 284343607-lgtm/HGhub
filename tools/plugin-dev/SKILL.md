@@ -21,7 +21,7 @@ For WebView login, offer a formless auth method when `hg.env.features.includes("
 
 Use hg.env.media and the supplied playback params.codecs; the client probes its WebView playback paths and reports a conservative codec intersection, which may be empty. Capability API results do not guarantee every profile or device playback. Headless/mock tests must inject media capabilities explicitly.
 
-Map user-facing failures to hg.PluginError; distinguish upstream rejection from changed successful response shapes. Keep logs free of credentials and signed URLs.
+Map user-facing failures to hg.PluginError; distinguish upstream rejection from changed successful response shapes. Keep logs free of credentials and signed URLs. Plugin logs, validation warnings and runtime errors share the host’s rate and ring limits; oversized details are truncated, and the log snapshot reports dropped lines. Use optional dispose() only for synchronous in-memory cleanup or logging. It has no active call scope, cannot perform I/O or start timers, is limited to one second, and is not guaranteed after a runtime fault. The host does not wait for a returned Promise.
 
 Return subtitles with their actual format, language, label, default and resource headers. The host converts declared SRT to UTF-8 VTT even when the server uses application/octet-stream. Encoding uses BOM, then response charset, otherwise UTF-8; unmarked legacy encodings are not guessed. ASS rendering remains unsupported. Verify subtitle selection on the target device separately from proxy tests.
 
