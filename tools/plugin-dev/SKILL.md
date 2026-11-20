@@ -23,6 +23,8 @@ Map user-facing failures to hg.PluginError; distinguish upstream rejection from 
 
 Return subtitles with their actual format, language, label, default and resource headers. The host converts declared SRT to UTF-8 VTT even when the server uses application/octet-stream. Encoding uses BOM, then response charset, otherwise UTF-8; unmarked legacy encodings are not guessed. ASS rendering remains unsupported. Verify subtitle selection on the target device separately from proxy tests.
 
+Use kind: external only for links handed to the system after user confirmation. HTTP(S), magnet, ed2k, rtsp and rtmp are allowed; app/mime are hints, not executable selection. No host headers, cookies or transformations are forwarded. Preloading never opens another application. Test installed-handler and missing-handler behavior on the device.
+
 Read references/testing.md and references/distribution.md before delivery. Verify file import, manifest identity/version, selected install, repeat import, detail and playback. Distinguish synthetic tests, real QuickJS, upstream requests and native device playback evidence. Report unverified behavior and retain reproduction steps.
 
 Follow publication constraints. Creating a plugin or manifest does not authorize uploading it. Public examples use fictional or user-controlled services.

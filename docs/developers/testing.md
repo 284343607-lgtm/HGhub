@@ -20,6 +20,8 @@
 
 ## 仓库验证
 
+外部流专项包含在 `tests/playback_selection.rs`：六种允许协议、正常/预加载/刷新均只返回确认信息、不创建活跃媒体会话、不泄露头和 Cookie；拒绝脚本/文件/data 地址及 URL 内账号密码，插件不能伪造宿主确认目标。设备另验确认、取消、处理程序缺失、外部打开后返回应用；编译或宿主测试不等于系统启动验收。
+
 字幕专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib media::subtitles` 检查 SRT 时间轴、UTF-8、UTF-16 BOM、GBK charset 与非法输入；`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test transport srt_tracks` 检查真实 QuickJS 到媒体代理的格式声明、轨道元信息、转换后的 Range/HEAD、坏轨不影响视频及会话释放。设备上另需验证默认字幕、多轨切换、关闭字幕与视频继续播放；专项测试不代表设备验收。
 
 ```powershell

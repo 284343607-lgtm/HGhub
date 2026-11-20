@@ -563,7 +563,8 @@ impl PluginManager {
             playback["streams"] = resolved["streams"].clone();
         }
         if selected["kind"] == "external" {
-            let mut e = PluginError::new("UNSUPPORTED", "该流需要外部播放器");
+            choices["external"] = json!({"url":selected["url"],"app":selected["external"]["app"],"mime":selected["external"]["mime"],"expiresAt":playback["expiresAt"]});
+            let mut e = PluginError::new("INTERACTION_REQUIRED", "该流需要在外部应用中打开");
             e.playback_choices = Some(choices);
             return Err(e);
         }

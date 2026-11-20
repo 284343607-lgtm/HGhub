@@ -11,8 +11,9 @@ export interface PreparedMedia {
   requestedAt?: number;
   sessionId: string; url: string; format: "hls" | "progressive"; providerId: string;
   playback: Omit<PlaybackInfo, "streams">;
-  choices: { source: PlaybackChoices; resolver?: PlaybackChoices; resolverRoute?: ResolverRoute };
+  choices: { source: PlaybackChoices; resolver?: PlaybackChoices; resolverRoute?: ResolverRoute; external?: ExternalMedia };
 }
+export interface ExternalMedia { url: string; app?: string | null; mime?: string | null; expiresAt?: number | null }
 export interface ResolverRoute {
   host: string; forced: boolean; selectedId?: string; resolvers: { id: string; name: string }[];
 }
