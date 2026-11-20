@@ -16,6 +16,8 @@ async fn source_and_resolver_choices_route_to_their_own_stage_without_exposing_r
           return {servers:[{id:'source-a',label:'源 A',secret:'discard'},{id:'source-b',label:'源 B'}],
             streams:[{url:'https://media.example/direct.mp4',format:'progressive',serverId,label:'直接播放',headers:{Authorization:'secret'}},
               {url:'https://page.example/watch',kind:'page',serverId,label:'播放页',resolverId:'fixture.choice.resolver'}],
+            subtitles:[{url:'https://media.example/source.srt',format:'srt',default:true,label:'Source'},
+              {url:'https://media.example/ignored.ass',format:'ass',default:true}],
             durationSec:100,expiresAt:9000000000000};
       }}});
     "#;
@@ -28,6 +30,8 @@ async fn source_and_resolver_choices_route_to_their_own_stage_without_exposing_r
         return {servers:[{id:'resolver-a',label:'解析 A'},{id:'resolver-b',label:'解析 B'}],
           streams:[{url:'https://media.example/a.mp4',format:'progressive',label:'720p',height:720,serverId},
             {url:'https://media.example/b.mp4',format:'progressive',label:'1080p',height:1080,serverId,headers:{Cookie:'secret'}}],
+          subtitles:[{url:'https://media.example/resolver.srt',format:'srt',default:true,label:'Resolver'},
+            {url:'https://media.example/second.vtt',format:'vtt',default:true}],
           durationSec:120,expiresAt:8000000000000};
       }}});
     "#;
@@ -61,6 +65,12 @@ async fn source_and_resolver_choices_route_to_their_own_stage_without_exposing_r
         2
     );
     assert_eq!(prepared["playback"]["durationSec"], 120);
+    let tracks = prepared["playback"]["subtitles"].as_array().unwrap();
+    assert_eq!(tracks.len(), 3);
+    assert!(tracks.iter().all(|t| t["format"] == "vtt"));
+    let defaults: Vec<_> = tracks.iter().filter(|t| t["default"] == true).collect();
+    assert_eq!(defaults.len(), 1);
+    assert_eq!(defaults[0]["label"], "Resolver");
     assert_eq!(prepared["playback"]["expiresAt"], 8000000000000u64);
     let visible = prepared.to_string();
     for hidden in [
