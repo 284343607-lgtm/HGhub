@@ -8,6 +8,8 @@ mod plugins;
 mod windows_login;
 #[cfg(target_os = "android")]
 mod android_login;
+#[cfg(target_os = "android")]
+mod android_documents;
 use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +19,13 @@ pub fn run() {
         .setup(|app, api| {
             let handle = api.register_android_plugin("com.hghub.player", "LoginWebViewPlugin")?;
             app.manage(android_login::AndroidLogin(handle));
+            Ok(())
+        }).build());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri::plugin::Builder::<tauri::Wry, ()>::new("plugin-documents")
+        .setup(|app, api| {
+            let handle = api.register_android_plugin("com.hghub.player", "PluginDocumentsPlugin")?;
+            app.manage(android_documents::AndroidDocuments(handle));
             Ok(())
         }).build());
     builder
@@ -56,6 +65,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             plugins::hpp_manage,
             plugins::pick_plugin_files,
+            plugins::pick_plugin_directory,
             commands::app_boot,
             commands::security_set,
             commands::set_orientation,

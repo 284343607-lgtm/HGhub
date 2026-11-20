@@ -31,4 +31,6 @@ For expiring streams, provide expiresAt in Unix milliseconds and return fresh ad
 
 Read references/testing.md and references/distribution.md before delivery. Verify file import, manifest identity/version, selected install, repeat import, detail and playback. Distinguish synthetic tests, real QuickJS, upstream requests and native device playback evidence. Report unverified behavior and retain reproduction steps.
 
+For local Android manifests with relative entries, use the host's directory picker before selecting the JSON list. A single content URI does not grant access to sibling files. Keep files within the chosen directory, use forward slashes, and avoid encoded separators, query strings and fragments. The host resolves names through the document provider; plugins must not infer opaque document IDs or request filesystem access. Directory grants are session-scoped; local plugin updates still need meta.updateUrl.
+
 Follow publication constraints. Creating a plugin or manifest does not authorize uploading it. Public examples use fictional or user-controlled services.

@@ -10,7 +10,7 @@
 | 图片或视频 403 | 资源请求头、Cookie 提供者、CDN 地址 |
 | 刷新无效 | reason:refresh、过期缓存、毫秒有效期 |
 | 页面流不能播 | 匹配解析器、页面是否误标为 MP4 |
-| Android 列表失败 | content URI 相对条目限制 |
+| Android 列表失败 | 相对条目先用“选择列表所在目录”授权，检查文件名、子目录及是否越界；单文件授权不包含兄弟文件 |
 
 ## 播放能力测试
 
@@ -19,6 +19,8 @@
 `node scripts/test-media-capabilities.mjs` 检查路径选择、API 返回值、编码交集、启动注册等待及失败重试；Rust `tests/media_capabilities.rs` 检查真实 QuickJS 快照、点播/直播/解析器参数、重复注册与能力变化。它们不进行视频样本解码或 UI 验收。
 
 ## 仓库验证
+
+目录导入专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test distribution --test automatic_updates` 覆盖不透明 URI 适配、只读取勾选条目、身份不符、错误隔离、预览取消及更新回归。运行 `node scripts/sync-android-network.mjs` 后，在 `src-tauri/gen/android` 执行 `./gradlew.bat :app:testX86_64DebugUnitTest -x :app:rustBuildX86_64Debug` 验证 Android 中文/编码/子目录路径及越界拒绝。设备另验系统授权、取消选择、不同文件提供者、重启后重新授权和保留数据安装。
 
 日志/卸载专项：`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib native::logs` 检查 240 行/分钟、2000 行保留、单行含 details 的 2 KiB 限制与丢弃计数；`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --test log_limits` 检查插件日志、校验告警和业务错误共用限额。`cargo test --manifest-path src-tauri/crates/hpp/Cargo.toml --lib runtime::lifecycle_tests` 检查正常卸载通知、禁止 I/O、抛错/死循环/挂起 Promise 的停用耗时，以及中断运行时跳过通知。
 

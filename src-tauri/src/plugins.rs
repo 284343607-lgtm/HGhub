@@ -8,6 +8,13 @@ use tauri_plugin_fs::FsExt;
 /// Document-provider access stays in the host adapter, never in a plugin API.
 pub struct PickedDocuments(pub tauri::AppHandle);
 impl hghub_hpp::manager::DocumentReader for PickedDocuments {
+    #[cfg(target_os = "android")]
+    fn resolve_relative(&self, base: &str, reference: &str) -> Result<String> {
+        use tauri::Manager;
+        self.0
+            .state::<crate::android_documents::AndroidDocuments>()
+            .resolve(base, reference)
+    }
     fn read(&self, location: &str, limit: usize) -> Result<Vec<u8>> {
         use std::io::Read;
         let file: tauri_plugin_fs::FilePath = location
@@ -22,6 +29,27 @@ impl hghub_hpp::manager::DocumentReader for PickedDocuments {
             .take((limit + 1) as u64)
             .read_to_end(&mut bytes)?;
         Ok(bytes)
+    }
+}
+
+#[tauri::command]
+pub async fn pick_plugin_directory(app: tauri::AppHandle) -> Result<Value> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        Ok(serde_json::json!(
+            app.state::<crate::android_documents::AndroidDocuments>()
+                .pick()
+                .await?
+        ))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Err(hghub_hpp::PluginError::new(
+            "UNSUPPORTED",
+            "此平台请直接选择本地列表文件",
+        ))
     }
 }
 

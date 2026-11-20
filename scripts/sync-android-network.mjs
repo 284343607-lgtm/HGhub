@@ -11,7 +11,7 @@ if (existsSync(manifest)) {
   mkdirSync(java, { recursive: true });
   copyFileSync(join(root, "src-tauri/android/OrientationPlugin.kt"), join(java, "OrientationPlugin.kt"));
   copyFileSync(join(root, "src-tauri/android/LoginWebViewProfile.kt"), join(java, "LoginWebViewProfile.kt"));
-  for (const name of ["LoginWebViewPlugin.kt", "LoginWebViewActivity.kt"]) {
+  for (const name of ["LoginWebViewPlugin.kt", "LoginWebViewActivity.kt", "PluginDocumentsPlugin.kt", "PluginDocumentPaths.kt"]) {
     copyFileSync(join(root, "src-tauri/android", name), join(java, name));
   }
   const test = join(main, "../androidTest");
@@ -20,6 +20,9 @@ if (existsSync(manifest)) {
   copyFileSync(join(root, "src-tauri/android/tests/LoginProfileIsolationTest.kt"), join(testJava, "LoginProfileIsolationTest.kt"));
   copyFileSync(join(root, "src-tauri/android/tests/AndroidManifest.xml"), join(test, "AndroidManifest.xml"));
   copyFileSync(join(root, "src-tauri/android/tests/ProcessLoginIsolationTest.kt"), join(testJava, "ProcessLoginIsolationTest.kt"));
+  const unit = join(main, "../test/java/com/hghub/player");
+  mkdirSync(unit, { recursive: true });
+  copyFileSync(join(root, "src-tauri/android/tests/PluginDocumentPathsTest.kt"), join(unit, "PluginDocumentPathsTest.kt"));
   const debug = join(main, "../debug");
   const debugJava = join(debug, "java/com/hghub/player");
   mkdirSync(debugJava, { recursive: true });

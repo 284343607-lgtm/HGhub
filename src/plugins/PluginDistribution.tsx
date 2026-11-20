@@ -4,6 +4,7 @@ import { pluginCommand, pluginError, type InstalledPlugin } from "./client";
 import type { PluginFailure } from "./protocol";
 import { usePluginRequests } from "./usePluginRequests";
 import { useHost } from "./HostContext";
+import { platform } from "../environment";
 
 interface ImportItem {
   key: string; id: string; name: string; description: string; version: string; source: string;
@@ -27,6 +28,7 @@ export default function PluginDistribution({ plugins, reload }: { plugins: Insta
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [downgrade, setDowngrade] = useState(false), [installOnly, setInstallOnly] = useState(false);
   const [report, setReport] = useState<Outcome[]>([]), [updates, setUpdates] = useState<UpdateStatus[]>([]);
+  const [directoryFiles, setDirectoryFiles] = useState<{ name: string; location: string }[]>([]);
   const token = useRef<string | null>(null);
   useEffect(() => () => { if (token.current) void pluginCommand("distribution.discard", { token: token.current }).catch(() => {}); }, []);
   const replacePreview = (next: Preview | null, changedOnly = false) => {
@@ -69,12 +71,14 @@ export default function PluginDistribution({ plugins, reload }: { plugins: Insta
     </section>
     <section className="plugin-local-import"><h2>本地文件与开发调试</h2>      <div className="hpp-distribution-buttons">
         <button className="primary" disabled={busy} onClick={() => void run(async () => readLocations(await invoke<string[]>("pick_plugin_files")))}>选择插件文件</button>
+        {platform === "android" && <button disabled={busy} onClick={() => void run(async () => setDirectoryFiles(await invoke<{ name: string; location: string }[]>("pick_plugin_directory")))}>选择列表所在目录</button>}
         <button disabled={busy || !plugins.length} onClick={() => void run(async () => {
           setReport([]); const result = await request<{ preview: Preview; statuses: UpdateStatus[] }>("updates.check", { ids: plugins.map(p => p.meta.id) });
           replacePreview(result.preview.items.length ? result.preview : null); if (!result.preview.items.length) void pluginCommand("distribution.discard", { token: result.preview.token });
           setUpdates(result.statuses);
         })}>检查插件更新</button>
       </div>
+      {directoryFiles.length > 0 && <div className="hpp-distribution-buttons" aria-label="目录中的插件列表">{directoryFiles.map(file => <button key={file.location} disabled={busy} onClick={() => void run(async () => { await readLocations([file.location]); setDirectoryFiles([]); })}>{file.name}</button>)}<button disabled={busy} onClick={() => setDirectoryFiles([])}>关闭目录</button></div>}
       <details><summary>粘贴代码导入</summary><textarea aria-label="插件代码" placeholder="export const meta = …" spellCheck={false} value={code} onChange={e => setCode(e.target.value)} />
         <button disabled={busy || !code.trim()} onClick={() => void run(async () => {
           const plugin = await request<InstalledPlugin>("import", { code, allowDowngrade: downgrade, installOnly });
