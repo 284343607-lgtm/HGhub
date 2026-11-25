@@ -33,10 +33,12 @@ jobs:
 
       - name: Force create unsigned IPA
         run: |
-          echo "Searching for .app files..."
-          APP_PATH=$(find . -name "*.app" -type d | grep -v "dSYM" | head -n 1)
+          echo "Searching for .app files in debug folder..."
+          # 这次我们直接去 debug 文件夹里找，并且忽略大小写
+          APP_PATH=$(find ./src-tauri/target/aarch64-apple-ios/debug -iname "*.app" -type d | head -n 1)
+          
           if [ -z "$APP_PATH" ]; then
-            echo "Error: No .app file found!"
+            echo "Error: No .app file found in debug folder!"
             exit 1
           fi
           echo "Found APP at: $APP_PATH"
