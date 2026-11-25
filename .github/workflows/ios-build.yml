@@ -31,17 +31,21 @@ jobs:
       - name: Build iOS App
         run: pnpm tauri build --target aarch64-apple-ios
 
-      - name: Find and List IPA file
+      - name: Force create unsigned IPA
         run: |
-          echo "Searching for .ipa files..."
-          find . -name "*.ipa" -type f
-          IPA_PATH=$(find . -name "*.ipa" -type f | head -n 1)
-          if [ -z "$IPA_PATH" ]; then
-            echo "Error: No .ipa file found!"
+          echo "Searching for .app files..."
+          APP_PATH=$(find . -name "*.app" -type d | grep -v "dSYM" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app file found!"
             exit 1
           fi
-          echo "Found IPA at: $IPA_PATH"
-          echo "IPA_PATH=$IPA_PATH" >> $GITHUB_ENV
+          echo "Found APP at: $APP_PATH"
+          
+          # 强行打包成未签名的 ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry HHub-unsigned.ipa Payload
+          echo "IPA_PATH=HHub-unsigned.ipa" >> $GITHUB_ENV
 
       - name: Upload iOS Artifact
         uses: actions/upload-artifact@v4
